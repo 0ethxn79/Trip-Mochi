@@ -1,8 +1,9 @@
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>我的旅遊手帳 - Trip Mochi 協作旅遊規劃器</title>
+  <title>⛩️ 廣島・山陽 6日旅遊手冊 - Trip Mochi</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
@@ -114,18 +115,18 @@
 <script>
 /**
  * ============================================================================
- * Trip Mochi (我的旅遊手帳) - 完整狀態與示範資料管理
+ * Trip Mochi (我的旅遊手帳) - 廣島・山陽 6日旅遊手冊完整版
  * ============================================================================
  */
 
-const STORAGE_KEY = 'trip_mochi_app_v1';
+const STORAGE_KEY = 'trip_mochi_app_v2';
 
 // 預設匯率 (相對於 TWD)
 const DEFAULT_RATES = {
   TWD: 1,
+  JPY: 0.215,
   CHF: 40.0,
   EUR: 38.0,
-  JPY: 0.21,
   USD: 32.5,
   KRW: 0.024
 };
@@ -142,64 +143,142 @@ const ITEM_TYPES = {
   FLIGHT: { id: 'FLIGHT', label: '航班', tag: 'FLIGHT', color: 'text-teal-700', bg: 'bg-teal-50', border: 'border-teal-200', icon: 'plane' }
 };
 
-// 產生初始示範資料 (包含影片中的「瑞士🇨🇭義大利🇮🇹秋季18天旅遊」與「旅遊規劃器示範」)
+// 產生初始示範資料 (已套用 廣島・山陽 6日旅遊手冊 行程資料)
 function createInitialData() {
   return {
-    activeTripId: 'trip_swiss_italy',
+    activeTripId: 'trip_hiroshima_sanyo',
     trips: [
       {
-        id: 'trip_swiss_italy',
-        code: 'C7SKHR',
-        title: '瑞士🇨🇭義大利🇮🇹秋季18天旅遊',
-        rates: { TWD: 1, CHF: 40.0, EUR: 38.0, JPY: 0.21, USD: 32.5 },
-        poolBalance: 15000,
-        poolLogs: [
-          { id: 'pl1', type: 'deposit', title: '每人公費預繳 (3750 x 4)', amount: 15000, date: '2026-10-15', by: '示範人員A' }
-        ],
+        id: 'trip_hiroshima_sanyo',
+        code: 'HIJ319',
+        title: '⛩️ 廣島・山陽 6日旅遊手冊',
+        rates: { TWD: 1, JPY: 0.215, USD: 32.5, KRW: 0.024 },
+        poolBalance: 0,
+        poolLogs: [],
         members: [
-          { id: 'm1', name: '示範人員A', avatar: '🐶' },
-          { id: 'm2', name: '示範人員B', avatar: '🐱' },
-          { id: 'm3', name: '示範人員C', avatar: '🐰' },
-          { id: 'm4', name: '示範人員D', avatar: '🦊' }
+          { id: 'm1', name: '我', avatar: '🐶' }
         ],
         days: [
           {
             id: 'd1',
-            date: '2026-10-15',
-            themeEmoji: '🇨🇭',
-            themeTitle: '出發到瑞士',
+            date: '2027-03-19',
+            themeEmoji: '⛩️',
+            themeTitle: '廣島・宮島',
             items: [
               {
-                id: 'item_flight_1',
+                id: 'item_flight_out',
                 type: 'FLIGHT',
-                time: '17:40',
-                title: '桃園國際機場',
-                location: '桃園國際機場 TPE',
-                airline: '阿提哈德航空',
-                flightNo: 'EY899',
+                time: '07:10',
+                title: '中華航空 CI112 (桃園 ➝ 廣島)',
+                location: '廣島機場 HIJ',
+                airline: '中華航空',
+                flightNo: 'CI112',
                 depCode: 'TPE',
-                depCity: '桃園',
-                depAirport: '台北 · 桃園國際機場',
-                depTime: '17:40',
-                arrCode: 'ZRH',
-                arrCity: '蘇黎世',
-                arrAirport: '蘇黎世國際機場',
-                arrTime: '12:00',
-                duration: '17h 30m',
-                hasLayover: true,
-                layoverCode: 'AUH',
-                layoverCity: '阿布達比',
-                layoverDuration: '停 1h20m',
-                nextFlightNo: 'EY143',
-                cabin: '經濟客艙',
-                checkedBag: '25kg',
+                depCity: '台北桃園',
+                depAirport: '台北桃園國際機場',
+                depTime: '07:10',
+                arrCode: 'HIJ',
+                arrCity: '廣島',
+                arrAirport: '廣島機場',
+                arrTime: '10:25',
+                duration: '2h 15m',
+                hasLayover: false,
+                checkedBag: '23kg',
                 carryOnBag: '7kg',
-                price: 35000,
+                price: 0,
                 currency: 'TWD',
                 includeTax: false,
                 isPotential: false,
-                memberIds: ['m1', 'm2', 'm3', 'm4'],
-                notes: '台北到阿布達比機場轉機\n轉機時間1小時20分\n總飛行時數17小時30分',
+                memberIds: ['m1'],
+                notes: '抵達廣島機場後，搭乘利木津巴士前往廣島市區（車程約 45 分鐘）。建議先在手機 Apple Wallet 綁定 ICOCA / Suica。',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              },
+              {
+                id: 'item_d1_2',
+                type: 'TRANSPORT',
+                time: '11:30',
+                title: '搭 JR 山陽本線 往宮島口',
+                location: '宮島口站',
+                transportMode: '電車 ・ 約 27 分鐘',
+                depStation: '廣島站',
+                arrStation: '宮島口站',
+                viaStation: 'JR 山陽本線',
+                depTime: '11:30',
+                arrTime: '11:57',
+                passTag: 'JR周遊券 / ICOCA',
+                price: 0,
+                currency: 'JPY',
+                includeTax: false,
+                isPotential: false,
+                segments: [],
+                memberIds: ['m1'],
+                notes: '先去廣島站寄放行李，再搭車前往宮島口。',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              },
+              {
+                id: 'item_d1_3',
+                type: 'FOOD',
+                time: '12:00',
+                title: '宮島車站吃午餐',
+                location: '宮島口棧橋',
+                price: 0,
+                currency: 'JPY',
+                includeTax: false,
+                isPotential: false,
+                memberIds: ['m1'],
+                notes: '品嚐廣島燒或星鰻飯（步行約 30 分鐘搭渡輪登島）。',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              },
+              {
+                id: 'item_d1_4',
+                type: 'SPOT',
+                time: '13:10',
+                title: '嚴島神社 ⛩️ (★ 必去)',
+                location: '嚴島神社',
+                price: 0,
+                currency: 'JPY',
+                includeTax: false,
+                isPotential: false,
+                memberIds: ['m1'],
+                notes: '欣賞絕美海上大鳥居與商店街散步（步行約 10 分鐘）。',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              },
+              {
+                id: 'item_d1_5',
+                type: 'SPOT',
+                time: '18:00',
+                title: '廣島寶可夢中心 (★ 必去)',
+                location: 'Pokemon Center Hiroshima',
+                price: 0,
+                currency: 'JPY',
+                includeTax: false,
+                isPotential: false,
+                memberIds: ['m1'],
+                notes: '廣島限定紅色暴鯉龍周邊巡禮（電車約 50 分鐘返回市區）。',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              },
+              {
+                id: 'item_hotel_1',
+                type: 'HOTEL',
+                time: '20:00',
+                title: '東橫INN廣島站前新幹線口1號',
+                location: '東橫INN廣島站前新幹線口1號',
+                price: 0,
+                currency: 'JPY',
+                includeTax: false,
+                isPotential: false,
+                memberIds: ['m1'],
+                notes: '入住 1 晚（3/19 – 3/20）\n入住時間：15:00 後\n退房時間：10:00 前',
                 images: [],
                 imagePos: 'top',
                 focalY: 50
@@ -208,90 +287,70 @@ function createInitialData() {
           },
           {
             id: 'd2',
-            date: '2026-10-16',
-            themeEmoji: '🇨🇭',
-            themeTitle: '抵達瑞士 · 萊茵瀑布',
+            date: '2027-03-20',
+            themeEmoji: '🏯',
+            themeTitle: '廣島 → 大阪',
             items: [
               {
-                id: 'item_tr_1',
-                type: 'TRANSPORT',
+                id: 'item_d2_1',
+                type: 'SPOT',
                 time: '09:00',
-                title: '蘇黎世機場火車站 (Zürich Flughafen)',
-                location: '蘇黎世機場火車站 (Zürich Flughafen)',
-                transportMode: '鐵路運輸 · 列車',
-                depStation: '蘇黎世機場火車站 (Zürich Flughafen)',
-                arrStation: 'Stein am Rhein (萊茵河畔施泰因)',
-                viaStation: 'Winterthur',
-                depTime: '09:00',
-                arrTime: '10:12',
-                passTag: 'STP卡',
-                price: 21.4,
-                currency: 'CHF',
+                title: '原爆圓頂館 (★ 必去)',
+                location: '原爆圓頂館',
+                price: 0,
+                currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
-                segments: [
-                  { mode: '鐵路運輸 · 列車', from: '蘇黎世機場火車站 (Zürich Flughafen)', to: 'Winterthur', time: '09:00', note: '轉乘站 Winterthur' },
-                  { mode: '鐵路運輸 · 列車', from: 'Winterthur', to: 'Stein am Rhein (萊茵河畔施泰因)', time: '09:25', note: '直達終點' }
-                ],
-                memberIds: ['m1', 'm2', 'm3', 'm4'],
-                notes: '使用 Swiss Travel Pass 免費搭乘，建議坐二等車廂上層視野較佳。',
+                memberIds: ['m1'],
+                notes: '世界文化遺產歷史地標（電車約 20 分鐘）。',
                 images: [],
                 imagePos: 'top',
                 focalY: 50
               },
               {
-                id: 'item_spot_1',
+                id: 'item_d2_2',
                 type: 'SPOT',
-                time: '13:00',
-                title: 'Stein am Rhein (萊茵河畔施泰因)',
-                location: 'Stein am Rhein (萊茵河畔施泰因)',
+                time: '10:00',
+                title: '廣島和平紀念公園',
+                location: '廣島和平紀念公園',
                 price: 0,
-                currency: 'CHF',
+                currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
-                memberIds: ['m1', 'm2', 'm3', 'm4'],
-                notes: '時間隨性，散步欣賞中世紀濕壁畫老城區與市政廳廣場。',
-                images: [
-                  'https://images.unsplash.com/photo-1527668752968-14dc70a27c95?auto=format&fit=crop&w=900&q=80'
-                ],
-                imagePos: 'bottom',
+                memberIds: ['m1'],
+                notes: '沿河岸參觀和平資料館（步行約 10 分鐘）。',
+                images: [],
+                imagePos: 'top',
                 focalY: 50
               },
               {
-                id: 'item_spot_2',
-                type: 'SPOT',
-                time: '14:00',
-                title: '萊茵瀑布 Rheinfall (歐洲最大瀑布)',
-                location: '萊茵瀑布 Rheinfall',
-                price: 5,
-                currency: 'CHF',
-                includeTax: true,
-                isPotential: true,
-                memberIds: ['m1', 'm2', 'm3', 'm4'],
-                notes: '這個行程額外花費的項目：\n1. Rock tour 搭乘在萊茵河中登島 (瀑布中間) 去程+回程 (20分鐘在島上) 22.50€\n2. Rhine crossing 搭船遊河3分鐘，去程到對岸3€；返程回來3€\n3. 15 minutes Rhine Falls roundtrip 15分鐘的超近距離觀景台5€',
-                images: [
-                  'https://images.unsplash.com/photo-1530122037265-a5f1f91d3b99?auto=format&fit=crop&w=900&q=80',
-                  'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=900&q=80'
-                ],
-                imagePos: 'bottom',
-                focalY: 50
-              },
-              {
-                id: 'item_hotel_1',
+                id: 'item_hotel_2',
                 type: 'HOTEL',
-                time: '18:00',
-                title: 'Kandersteg (坎德施泰格) 木屋民宿',
-                location: 'Bahnhofstrasse 274, 3718 Kandersteg, 瑞士',
-                checkIn: '2026-10-16 15:00',
-                checkOut: '2026-10-19 11:00',
-                nights: 3,
-                platform: 'Airbnb',
-                price: 17222,
-                currency: 'TWD',
+                time: '16:00',
+                title: '住1道頓堀2號店 (心齋橋 Check in)',
+                location: '住1道頓堀2號店 大阪市',
+                price: 0,
+                currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
-                memberIds: ['m1', 'm2', 'm3', 'm4'],
-                notes: '距離車站步行 5 分鐘，附完整廚房與陽台山景。',
+                memberIds: ['m1'],
+                notes: '入住 4 晚（3/20 – 3/24）\n入住時間：15:00 後\n退房時間：10:00 前',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              },
+              {
+                id: 'item_d2_4',
+                type: 'SPOT',
+                time: '22:00',
+                title: '大阪歌舞秀',
+                location: '道頓堀',
+                price: 0,
+                currency: 'JPY',
+                includeTax: false,
+                isPotential: false,
+                memberIds: ['m1'],
+                notes: '體驗華麗舞台表演（步行前往）。',
                 images: [],
                 imagePos: 'top',
                 focalY: 50
@@ -300,123 +359,150 @@ function createInitialData() {
           },
           {
             id: 'd3',
-            date: '2026-10-17',
-            themeEmoji: '🏔️',
-            themeTitle: 'Oeschinensee 厄希嫩湖一日遊',
+            date: '2027-03-21',
+            themeEmoji: '🏙️',
+            themeTitle: '大阪市區巡禮',
             items: [
               {
-                id: 'item_tr_2',
-                type: 'TRANSPORT',
+                id: 'item_d3_1',
+                type: 'SPOT',
                 time: '09:00',
-                title: 'Kandersteg (Talst. Oeschinen) (纜車站)',
-                location: 'Öschistrasse 50, 3718 Kandersteg, 瑞士',
-                transportMode: '登山纜車 · 纜車',
-                depStation: 'Kandersteg (Talst. Oeschinen)',
-                arrStation: 'Oeschinen (Bergstation)',
-                viaStation: '直達纜車',
-                depTime: '09:00',
-                arrTime: '09:10',
-                passTag: '半價卡適用',
-                price: 20,
-                currency: 'CHF',
+                title: '露天神社 ⛩️',
+                location: '露天神社 大阪',
+                price: 0,
+                currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
-                segments: [
-                  { mode: '登山纜車', from: 'Kandersteg (Talst. Oeschinen)', to: 'Oeschinen (Bergstation)', time: '09:00', note: '車程約 10 分鐘' }
-                ],
-                memberIds: ['m1', 'm2', 'm3', 'm4'],
-                notes: '車資：CHF 20 / 人 (來回票)',
+                memberIds: ['m1'],
+                notes: '梅田著名的戀愛結緣聖地（搭電車前往）。',
                 images: [],
                 imagePos: 'top',
                 focalY: 50
               },
               {
-                id: 'item_spot_3',
+                id: 'item_d3_2',
                 type: 'SPOT',
-                time: '09:30',
-                title: 'Oeschinensee 厄希嫩湖',
-                location: 'Oeschinensee 厄希嫩湖',
+                time: '10:00',
+                title: '大鳥大社',
+                location: '大鳥大社',
                 price: 0,
-                currency: 'CHF',
+                currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
-                memberIds: ['m1', 'm2', 'm3', 'm4'],
-                notes: '1. Läger 觀景台往返約 1-1.5 小時，較早出現整片湖+山壁的角度，有長椅。\n2. 經典「兩棵樹框住湖面景點」，往返約 2-2.5 小時。',
-                images: [
-                  'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=900&q=80',
-                  'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=900&q=80'
-                ],
+                memberIds: ['m1'],
+                notes: '祈求勝運與旅途平安。',
+                images: [],
                 imagePos: 'top',
-                focalY: 45
+                focalY: 50
               },
               {
-                id: 'item_spot_4',
+                id: 'item_d3_3',
                 type: 'SPOT',
-                time: '13:30',
-                title: '厄希嫩湖溜滑梯 (Mountain Coaster)',
-                location: 'Oeschinen Bergstation',
-                price: 6,
-                currency: 'CHF',
+                time: '13:00',
+                title: '通天閣',
+                location: '通天閣',
+                price: 0,
+                currency: 'JPY',
                 includeTax: false,
-                isPotential: true,
-                memberIds: ['m1', 'm2', 'm3', 'm4'],
-                notes: '② 厄希嫩湖溜滑梯 750m\n山上遊樂活動項目每日 9:30-17:15 (視天氣情況而定)\n13點之前單次 CHF $6\n13點之後單次 CHF $7',
-                images: [
-                  'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=900&q=80'
-                ],
-                imagePos: 'middle',
+                isPotential: false,
+                memberIds: ['m1'],
+                notes: '新世界通天閣逛街吃串炸。',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              },
+              {
+                id: 'item_d3_4',
+                type: 'SPOT',
+                time: '14:00',
+                title: '四天王寺市集',
+                location: '四天王寺',
+                price: 0,
+                currency: 'JPY',
+                includeTax: false,
+                isPotential: false,
+                memberIds: ['m1'],
+                notes: '市集挖寶逛古物。',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              },
+              {
+                id: 'item_d3_5',
+                type: 'SPOT',
+                time: '17:00',
+                title: '大阪寶可夢中心',
+                location: 'Pokemon Center Osaka',
+                price: 0,
+                currency: 'JPY',
+                includeTax: false,
+                isPotential: false,
+                memberIds: ['m1'],
+                notes: '大丸梅田店旗艦店超好逛。',
+                images: [],
+                imagePos: 'top',
                 focalY: 50
               }
             ]
           },
           {
             id: 'd4',
-            date: '2026-10-18',
-            themeEmoji: '🚞',
-            themeTitle: '石丹峰敞篷纜車 · 琉森',
+            date: '2027-03-22',
+            themeEmoji: '🌊',
+            themeTitle: '海之京都',
             items: [
               {
-                id: 'item_tr_3',
-                type: 'TRANSPORT',
+                id: 'item_d4_1',
+                type: 'SPOT',
                 time: '09:00',
-                title: '石丹峰 Stanserhorn 敞篷纜車',
-                location: 'Stanserhorn Bahn, Stans',
-                transportMode: '鐵路與登山纜車',
-                depStation: 'Kandersteg (坎德施泰格)',
-                arrStation: '石丹峰 Stanserhorn 敞篷纜車',
-                viaStation: 'Bern / Luzern',
-                depTime: '09:00',
-                arrTime: '11:30',
-                passTag: 'STP免費',
+                title: '天橋立',
+                location: '天橋立',
                 price: 0,
-                currency: 'CHF',
+                currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
-                segments: [
-                  { mode: '鐵路運輸 · 列車', from: 'Kandersteg (坎德施泰格)', to: 'Bern (伯恩)', time: '09:00', note: '轉乘站 Bern' },
-                  { mode: '鐵路運輸 · 列車', from: 'Bern (伯恩)', to: 'Luzern (琉森)', time: '10:00', note: '轉乘站 Luzern' },
-                  { mode: '登山纜車', from: 'Stans (纜車站)', to: 'Stanserhorn (石丹峰山頂)', time: '11:05', note: 'CabriO 雙層敞篷纜車' }
-                ],
-                memberIds: ['m1', 'm2', 'm3', 'm4'],
-                notes: '持 Swiss Travel Pass 搭乘石丹峰纜車全段免費，建議提前線上預約登頂時段。',
-                images: [
-                  'https://images.unsplash.com/photo-1527004013197-933c4bb611b3?auto=format&fit=crop&w=900&q=80'
-                ],
-                imagePos: 'bottom',
+                memberIds: ['m1'],
+                notes: '日本三景之一，俯瞰飛龍觀（電車 / 巴士）。',
+                images: [],
+                imagePos: 'top',
                 focalY: 50
               },
               {
-                id: 'item_food_1',
-                type: 'FOOD',
-                time: '12:30',
-                title: 'Rondorama 360度旋轉餐廳',
-                location: 'Stanserhorn Summit',
-                price: 32,
-                currency: 'CHF',
+                id: 'item_d4_2',
+                type: 'SPOT',
+                time: '11:00',
+                title: '伊根舟屋',
+                location: '伊根舟屋',
+                price: 0,
+                currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
-                memberIds: ['m1', 'm2', 'm3', 'm4'],
-                notes: '必點瑞士傳統通心粉 Älplermagronen 配蘋果泥！',
+                memberIds: ['m1'],
+                notes: '漫步傳統木造舟屋群（搭乘巴士前往）。',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              },
+              {
+                id: 'item_d4_3',
+                type: 'TRANSPORT',
+                time: '13:00',
+                title: '伊根灣遊船',
+                location: '伊根灣賞景船',
+                transportMode: '遊覽船',
+                depStation: '伊根灣日出碼頭',
+                arrStation: '伊根灣巡航',
+                viaStation: '海上餵海鷗',
+                depTime: '13:00',
+                arrTime: '13:25',
+                passTag: '遊覽船票',
+                price: 0,
+                currency: 'JPY',
+                includeTax: false,
+                isPotential: false,
+                segments: [],
+                memberIds: ['m1'],
+                notes: '海上近距離欣賞舟屋餵海鷗。',
                 images: [],
                 imagePos: 'top',
                 focalY: 50
@@ -425,32 +511,108 @@ function createInitialData() {
           },
           {
             id: 'd5',
-            date: '2026-10-19',
-            themeEmoji: '🇮🇹',
-            themeTitle: '米蘭到威尼斯水都',
+            date: '2027-03-23',
+            themeEmoji: '🦌',
+            themeTitle: '宇治・奈良',
             items: [
               {
-                id: 'item_tr_4',
-                type: 'TRANSPORT',
+                id: 'item_d5_1',
+                type: 'SPOT',
                 time: '09:00',
-                title: '米蘭到威尼斯 (Frecciarossa 高鐵)',
-                location: 'Milano Centrale (米蘭中央車站)',
-                transportMode: '高速鐵路 · 列車',
-                depStation: 'Milano Centrale (米蘭中央車站)',
-                arrStation: 'Venezia S.Lucia (威尼斯)',
-                viaStation: '直達列車',
-                depTime: '09:00',
-                arrTime: '11:27',
-                passTag: '早鳥票',
-                price: 29.9,
-                currency: 'EUR',
+                title: '宇治上神社',
+                location: '宇治上神社',
+                price: 0,
+                currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
-                segments: [
-                  { mode: '高鐵 Frecciarossa', from: 'Milano Centrale (米蘭中央車站)', to: 'Venezia S.Lucia (威尼斯)', time: '09:00', note: '車廂 4 · 座位 12A-12D' }
-                ],
-                memberIds: ['m1', 'm2', 'm3', 'm4'],
-                notes: '義大利國鐵車票上車前若為區間車務必打票；高鐵對號座直接出示 QR Code 即可。',
+                memberIds: ['m1'],
+                notes: '日本現存最古老神社建築（搭電車前往）。',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              },
+              {
+                id: 'item_d5_2',
+                type: 'SPOT',
+                time: '11:00',
+                title: '平等院',
+                location: '平等院',
+                price: 0,
+                currency: 'JPY',
+                includeTax: false,
+                isPotential: false,
+                memberIds: ['m1'],
+                notes: '參觀鳳凰堂與品嚐宇治抹茶（步行前往）。',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              },
+              {
+                id: 'item_d5_3',
+                type: 'SPOT',
+                time: '14:00',
+                title: '奈良公園',
+                location: '奈良公園',
+                price: 0,
+                currency: 'JPY',
+                includeTax: false,
+                isPotential: false,
+                memberIds: ['m1'],
+                notes: '與可愛小鹿互動散步（搭電車前往）。',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              }
+            ]
+          },
+          {
+            id: 'd6',
+            date: '2027-03-24',
+            themeEmoji: '✈️',
+            themeTitle: '大阪 → 桃園',
+            items: [
+              {
+                id: 'item_d6_1',
+                type: 'SPOT',
+                time: '09:30',
+                title: '自由活動 & 最後採買',
+                location: '關西國際機場',
+                price: 0,
+                currency: 'JPY',
+                includeTax: false,
+                isPotential: false,
+                memberIds: ['m1'],
+                notes: '心齋橋或臨空城 Outlet 補貨，搭電車前往關西機場搭機。',
+                images: [],
+                imagePos: 'top',
+                focalY: 50
+              },
+              {
+                id: 'item_flight_in',
+                type: 'FLIGHT',
+                time: '19:00',
+                title: '中華航空 CI173 (關西 ➝ 桃園)',
+                location: '大阪關西國際機場 KIX',
+                airline: '中華航空',
+                flightNo: 'CI173',
+                depCode: 'KIX',
+                depCity: '大阪關西',
+                depAirport: '關西國際機場',
+                depTime: '19:00',
+                arrCode: 'TPE',
+                arrCity: '台北桃園',
+                arrAirport: '台北桃園國際機場',
+                arrTime: '21:25',
+                duration: '3h 25m',
+                hasLayover: false,
+                checkedBag: '23kg',
+                carryOnBag: '7kg',
+                price: 0,
+                currency: 'TWD',
+                includeTax: false,
+                isPotential: false,
+                memberIds: ['m1'],
+                notes: '建議提前 2.5～3 小時抵達關西機場辦理登機與免稅品手續。',
                 images: [],
                 imagePos: 'top',
                 focalY: 50
@@ -458,189 +620,22 @@ function createInitialData() {
             ]
           }
         ],
-        expenses: [
-          {
-            id: 'exp1',
-            date: '2026-10-15',
-            time: '17:40',
-            title: '阿提哈德航空來回機票 (4人)',
-            category: '交通',
-            method: '信用卡',
-            amount: 140000,
-            currency: 'TWD',
-            extraFee: false,
-            payerId: 'm1',
-            splitMemberIds: ['m1', 'm2', 'm3', 'm4']
-          },
-          {
-            id: 'exp2',
-            date: '2026-10-16',
-            time: '18:00',
-            title: 'Kandersteg 木屋民宿 3晚',
-            category: '住宿',
-            method: '信用卡',
-            amount: 68888,
-            currency: 'TWD',
-            extraFee: false,
-            payerId: 'm2',
-            splitMemberIds: ['m1', 'm2', 'm3', 'm4']
-          },
-          {
-            id: 'exp3',
-            date: '2026-10-17',
-            time: '12:45',
-            title: '厄希嫩湖山屋午餐',
-            category: '餐飲',
-            method: '現金支付',
-            amount: 112,
-            currency: 'CHF',
-            extraFee: false,
-            payerId: 'm1',
-            splitMemberIds: ['m1', 'm2', 'm3', 'm4']
-          }
-        ],
-        journals: [
-          {
-            id: 'j1',
-            authorId: 'm1',
-            date: '2026-10-19 03:52',
-            title: '義大利火車票小Tip',
-            content: '隨身帶一隻筆，當打票機有問題時手寫時間日期\n\n日期：建議使用歐洲習慣的 日 / 月 / 年 (例如：25/09/2026)\n時間：使用 24 小時制 (例如：14:35)',
-            image: 'https://images.unsplash.com/photo-1515542622106-78bda8ba0e5b?auto=format&fit=crop&w=900&q=80',
-            comments: [
-              { id: 'c1', memberId: 'm2', text: '超實用！已經把原子筆放進隨身小包了 ✍️', time: '04:10' }
-            ]
-          }
-        ],
+        expenses: [],
+        journals: [],
         todos: [
-          {
-            id: 'td1',
-            title: '梵蒂岡博物館門票預約',
-            completedBy: ['m1', 'm2', 'm4'],
-            comments: [
-              { id: 'tc1', memberId: 'm1', text: '已完成 09:30 時段預約，憑證放在文件區了！', time: '10/12' }
-            ]
-          },
-          {
-            id: 'td2',
-            title: '羅馬競技場地下層門票',
-            completedBy: [],
-            comments: []
-          },
-          {
-            id: 'td3',
-            title: '開通歐洲跨國 eSIM 漫遊',
-            completedBy: ['m1', 'm3'],
-            comments: []
-          }
+          { id: 'td1', title: '護照（確認效期 6 個月以上）', completedBy: [], comments: [] },
+          { id: 'td2', title: '填寫 Visit Japan Web', completedBy: [], comments: [] },
+          { id: 'td3', title: '日本上網卡 / eSIM 開通設定', completedBy: [], comments: [] },
+          { id: 'td4', title: '日幣現鈔與海外信用卡', completedBy: [], comments: [] },
+          { id: 'td5', title: '電子機票與飯店確認信存入手機', completedBy: [], comments: [] }
         ],
         packing: {
           m1: [
-            { id: 'pk1', category: '衣物', name: '防風防水衝鋒外套', packed: true },
-            { id: 'pk2', category: '衣物', name: '發熱衣 x3', packed: true },
-            { id: 'pk3', category: '衣物', name: '羊毛襪 x4', packed: false },
-            { id: 'pk4', category: '3C 電子', name: '歐規雙圓孔轉接頭', packed: true },
-            { id: 'pk5', category: '證件財物', name: '護照正本 & 申根保險英文證明', packed: true }
-          ],
-          m2: [
-            { id: 'pk6', category: '衣物', name: '針織毛衣 x2', packed: true },
-            { id: 'pk7', category: '盥洗用品', name: '保濕乳液與護唇膏', packed: false }
-          ],
-          m3: [],
-          m4: []
+            { id: 'pk1', category: '證件財物', name: '護照、錢包、日幣', packed: false },
+            { id: 'pk2', category: '3C 電子', name: '行動電源、充電線、豆腐頭', packed: false },
+            { id: 'pk3', category: '衣物', name: '保暖外套、好走運動鞋', packed: false }
+          ]
         },
-        pocketList: [
-          {
-            id: 'pl_1',
-            type: '美食',
-            title: 'Gino Sorbillo Lievito Madre',
-            tag: '米蘭美食',
-            rating: 5.0,
-            priceRange: '€10 - €18',
-            mapUrl: 'https://maps.google.com/?q=Gino+Sorbillo+Milan',
-            notes: '米蘭大教堂旁超人氣拿坡里窯烤披薩，餅皮Q彈有嚼勁！',
-            status: '想去',
-            images: ['https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=600&q=80']
-          },
-          {
-            id: 'pl_2',
-            type: '美食',
-            title: 'Otaleg 義式手工冰淇淋',
-            tag: '羅馬冰淇淋',
-            rating: 5.0,
-            priceRange: '€3.5 - €6',
-            mapUrl: 'https://maps.google.com/?q=Otaleg+Rome',
-            notes: '2026年紅蝦評鑑獲得三隻最高榮譽評鑑！必點開心果與黑巧克力口味。',
-            status: '想去',
-            images: ['https://images.unsplash.com/photo-1567206563064-6f60f40a2b57?auto=format&fit=crop&w=600&q=80']
-          },
-          {
-            id: 'pl_3',
-            type: '探索景點',
-            title: '羅馬 · 苹丘夕陽 (Terrazza del Pincio)',
-            tag: '羅馬 · 夕陽',
-            rating: 5.0,
-            priceRange: '免費',
-            mapUrl: 'https://maps.google.com/?q=Terrazza+del+Pincio+Rome',
-            notes: '俯瞰人民廣場與聖彼得大教堂圓頂的絕美日落觀景台。',
-            status: '想去',
-            images: ['https://images.unsplash.com/photo-1552832230-c0197dd311b5?auto=format&fit=crop&w=600&q=80']
-          },
-          {
-            id: 'pl_4',
-            type: '購物/伴手禮',
-            title: 'Läderach 瑞士手工巧克力',
-            tag: '瑞士必買',
-            rating: 5.0,
-            priceRange: 'CHF 15 - 40',
-            mapUrl: 'https://maps.google.com/?q=Laderach+Zurich',
-            notes: '蘇黎世車站與班霍夫大街都有分店，榛果黑巧克力片必買！',
-            status: '想去',
-            images: []
-          }
-        ],
-        documents: [
-          {
-            id: 'doc1',
-            category: '保險',
-            title: '申根旅遊平安險英文投保證明',
-            owner: '全體成員',
-            expiry: '2026-11-05',
-            note: '海關抽查必備，已存離線檔'
-          },
-          {
-            id: 'doc2',
-            category: '訂單',
-            title: 'Swiss Travel Pass 連續15天電子票',
-            owner: '全體成員',
-            expiry: '2026-10-30',
-            note: '查票時出示 QR Code 與護照'
-          }
-        ]
-      },
-      {
-        id: 'trip_demo_blank',
-        code: 'WFL259',
-        title: '旅遊規劃器示範',
-        rates: { TWD: 1, JPY: 0.21, USD: 32.5, KRW: 0.024 },
-        poolBalance: 0,
-        poolLogs: [],
-        members: [
-          { id: 'dm1', name: '我', avatar: '🐶' }
-        ],
-        days: [
-          {
-            id: 'dd1',
-            date: '2026-10-11',
-            themeEmoji: '🍎',
-            themeTitle: '第一天',
-            items: []
-          }
-        ],
-        expenses: [],
-        journals: [],
-        todos: [],
-        packing: { dm1: [] },
         pocketList: [],
         documents: []
       }
@@ -750,8 +745,6 @@ function calculateTripFinancials(trip) {
         : trip.members.map(m => m.id);
       if (participants.length === 0) return;
 
-      // 機票與交通單人票價通常為每人金額；住宿若標示總價則平分，這裡統一依項目單價/每人計算或分攤
-      // 影片中：機票 35,000/人、STP卡 16,467/人、住宿 17,222/人
       let perPersonOrig = price;
       if (item.includeTax) perPersonOrig = perPersonOrig * 1.015;
       const perPersonTWD = convertToTWD(perPersonOrig, item.currency || 'TWD', rates);
@@ -1432,7 +1425,7 @@ function renderBookingsTab(trip) {
               <i data-lucide="map-pin" class="w-3.5 h-3.5 text-purple-600"></i>
               <span>${escapeHtml(h.location || '未填寫地址')}</span>
             </p>
-            ${h.notes ? `<div class="mt-2.5 bg-cream/70 rounded-xl p-2.5 text-xs text-stone-600">${escapeHtml(h.notes)}</div>` : ''}
+            ${h.notes ? `<div class="mt-2.5 bg-cream/70 rounded-xl p-2.5 text-xs text-stone-600 whitespace-pre-line">${escapeHtml(h.notes)}</div>` : ''}
           </div>
         `).join('')}</div>`
       ) : ''}
@@ -2170,7 +2163,7 @@ function renderModalLayer(trip) {
 
         <!-- 輸入行程碼加入 -->
         <form onsubmit="joinTripByCode(event)" class="flex items-center gap-2">
-          <input type="text" id="trip_code_input" placeholder="輸入行程碼 (如 C7SKHR 或 WFL259)..."
+          <input type="text" id="trip_code_input" placeholder="輸入行程碼 (如 HIJ319)..."
             class="flex-1 bg-white rounded-2xl px-4 py-3 text-xs border border-warmBorder focus:outline-none focus:border-sage uppercase" />
           <button type="submit" class="w-11 h-11 rounded-2xl bg-charcoal text-white flex items-center justify-center shrink-0">
             <i data-lucide="arrow-right" class="w-4 h-4"></i>
@@ -2221,12 +2214,12 @@ function renderModalLayer(trip) {
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-bold text-stone-600 mb-1">出發日期</label>
-            <input type="date" name="startDate" required value="2026-11-20"
+            <input type="date" name="startDate" required value="2027-03-19"
               class="w-full bg-white rounded-2xl px-3 py-2.5 text-xs border border-warmBorder" />
           </div>
           <div>
             <label class="block text-xs font-bold text-stone-600 mb-1">旅遊天數</label>
-            <input type="number" name="daysCount" min="1" max="30" value="5" required
+            <input type="number" name="daysCount" min="1" max="30" value="6" required
               class="w-full bg-white rounded-2xl px-3 py-2.5 text-xs border border-warmBorder" />
           </div>
         </div>
@@ -2274,7 +2267,6 @@ function renderModalLayer(trip) {
 
   // 4. 新增 / 編輯行程項目表單 (支援航班、交通、圖片位置、潛在花費、分攤成員)
   else if (type === 'ITEM_FORM' || type === 'EDIT_ITEM') {
-    const currentDay = trip.days[uiState.activeDayIndex];
     const existingItem = type === 'EDIT_ITEM'
       ? trip.days.flatMap(d => d.items).find(i => i.id === payload)
       : null;
@@ -2319,24 +2311,24 @@ function renderModalLayer(trip) {
           <div class="bg-white rounded-2xl p-3 border border-warmBorder space-y-2.5">
             <div class="text-xs font-extrabold text-teal-700">✈️ 航班詳細資訊</div>
             <div class="grid grid-cols-2 gap-2">
-              <input type="text" name="airline" value="${escapeHtml(existingItem?.airline || '')}" placeholder="航空公司 (例: 長榮航空)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-              <input type="text" name="flightNo" value="${escapeHtml(existingItem?.flightNo || '')}" placeholder="航班代號 (例: BR198)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="airline" value="${escapeHtml(existingItem?.airline || '')}" placeholder="航空公司 (例: 中華航空)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="flightNo" value="${escapeHtml(existingItem?.flightNo || '')}" placeholder="航班代號 (例: CI112)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
             </div>
             <div class="grid grid-cols-2 gap-2">
-              <input type="text" name="depCity" value="${escapeHtml(existingItem?.depCity || '')}" placeholder="起飛城市 (例: 桃園)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="depCity" value="${escapeHtml(existingItem?.depCity || '')}" placeholder="起飛城市 (例: 台北桃園)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
               <input type="text" name="depCode" value="${escapeHtml(existingItem?.depCode || '')}" placeholder="起飛代碼 (例: TPE)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
             </div>
             <div class="grid grid-cols-2 gap-2">
-              <input type="text" name="arrCity" value="${escapeHtml(existingItem?.arrCity || '')}" placeholder="抵達城市 (例: 蘇黎世)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-              <input type="text" name="arrCode" value="${escapeHtml(existingItem?.arrCode || '')}" placeholder="抵達代碼 (例: ZRH)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="arrCity" value="${escapeHtml(existingItem?.arrCity || '')}" placeholder="抵達城市 (例: 廣島)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="arrCode" value="${escapeHtml(existingItem?.arrCode || '')}" placeholder="抵達代碼 (例: HIJ)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
             </div>
             <div class="grid grid-cols-3 gap-2">
-              <input type="text" name="arrTime" value="${escapeHtml(existingItem?.arrTime || '12:00')}" placeholder="抵達時間" class="bg-cream rounded-xl px-2.5 py-2 text-xs border border-warmBorder" />
-              <input type="text" name="checkedBag" value="${escapeHtml(existingItem?.checkedBag || '25kg')}" placeholder="託運kg" class="bg-cream rounded-xl px-2.5 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="arrTime" value="${escapeHtml(existingItem?.arrTime || '10:25')}" placeholder="抵達時間" class="bg-cream rounded-xl px-2.5 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="checkedBag" value="${escapeHtml(existingItem?.checkedBag || '23kg')}" placeholder="託運kg" class="bg-cream rounded-xl px-2.5 py-2 text-xs border border-warmBorder" />
               <input type="text" name="carryOnBag" value="${escapeHtml(existingItem?.carryOnBag || '7kg')}" placeholder="手提kg" class="bg-cream rounded-xl px-2.5 py-2 text-xs border border-warmBorder" />
             </div>
             <div class="grid grid-cols-2 gap-2">
-              <input type="text" name="layoverCode" value="${escapeHtml(existingItem?.layoverCode || '')}" placeholder="轉機代碼 (選填, 如 AUH)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="layoverCode" value="${escapeHtml(existingItem?.layoverCode || '')}" placeholder="轉機代碼 (選填)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
               <input type="text" name="layoverDuration" value="${escapeHtml(existingItem?.layoverDuration || '')}" placeholder="轉機停留 (如 停 1h20m)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
             </div>
           </div>
@@ -2346,8 +2338,8 @@ function renderModalLayer(trip) {
           <div class="bg-white rounded-2xl p-3 border border-warmBorder space-y-2.5">
             <div class="text-xs font-extrabold text-sky-700">🚆 交通路線與票券</div>
             <div class="grid grid-cols-2 gap-2">
-              <input type="text" name="transportMode" value="${escapeHtml(existingItem?.transportMode || '鐵路運輸 · 列車')}" placeholder="交通方式" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-              <input type="text" name="passTag" value="${escapeHtml(existingItem?.passTag || '')}" placeholder="票券標籤 (如 STP卡/早鳥票)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="transportMode" value="${escapeHtml(existingItem?.transportMode || '電車 ・ 約 30 分鐘')}" placeholder="交通方式" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="passTag" value="${escapeHtml(existingItem?.passTag || '')}" placeholder="票券標籤 (如 JR周遊券)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
             </div>
             <div class="grid grid-cols-2 gap-2">
               <input type="text" name="depStation" value="${escapeHtml(existingItem?.depStation || '')}" placeholder="出發站名" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
@@ -2374,7 +2366,7 @@ function renderModalLayer(trip) {
               class="col-span-2 bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
             <select name="currency" class="bg-cream rounded-xl px-2.5 py-2 text-xs border border-warmBorder font-bold">
               ${Object.keys(trip.rates || DEFAULT_RATES).map(cur => `
-                <option value="${cur}" ${(existingItem?.currency || 'TWD') === cur ? 'selected' : ''}>${cur}</option>
+                <option value="${cur}" ${(existingItem?.currency || 'JPY') === cur ? 'selected' : ''}>${cur}</option>
               `).join('')}
             </select>
           </div>
@@ -2511,7 +2503,7 @@ function renderModalLayer(trip) {
   else if (type === 'EDIT_DAY_INFO') {
     const dayIdx = payload;
     const day = trip.days[dayIdx];
-    const emojis = ['🇨🇭', '🇮🇹', '🇯🇵', '🏔️', '🚞', '🍕', '🏰', '🛍️', '✈️', '🍎', '🌊', '🌸'];
+    const emojis = ['⛩️', '🏯', '🏙️', '🌊', '🦌', '✈️', '🇯🇵', '🏔️', '🚞', '🍜', '🛍️', '🌸'];
 
     content = `
       <form onsubmit="submitEditDayInfo(event, ${dayIdx})" class="p-5 space-y-4">
@@ -2834,7 +2826,7 @@ function renderModalLayer(trip) {
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block text-[11px] font-bold text-stone-500 mb-1">日期</label>
-            <input type="date" name="date" value="${trip.days[uiState.activeDayIndex]?.date || '2026-10-16'}" required
+            <input type="date" name="date" value="${trip.days[uiState.activeDayIndex]?.date || '2027-03-19'}" required
               class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
           </div>
           <div>
@@ -2855,7 +2847,7 @@ function renderModalLayer(trip) {
           <div>
             <label class="block text-[11px] font-bold text-stone-500 mb-1">幣別</label>
             <select name="currency" class="w-full bg-white rounded-xl px-2.5 py-2.5 text-xs border border-warmBorder font-bold">
-              ${Object.keys(trip.rates || DEFAULT_RATES).map(c => `<option value="${c}">${c}</option>`).join('')}
+              ${Object.keys(trip.rates || DEFAULT_RATES).map(c => `<option value="${c}" ${c === 'JPY' ? 'selected' : ''}>${c}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -2881,7 +2873,7 @@ function renderModalLayer(trip) {
 
         <div>
           <label class="block text-[11px] font-bold text-stone-500 mb-1">項目名稱 *</label>
-          <input type="text" name="title" required placeholder="例如：藥妝店購物、晚餐披薩"
+          <input type="text" name="title" required placeholder="例如：宮島星鰻飯、藥妝店購物"
             class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
         </div>
 
@@ -2994,7 +2986,7 @@ function renderModalLayer(trip) {
         </div>
         <div>
           <label class="block text-xs font-bold text-stone-500 mb-1">日誌標題 *</label>
-          <input type="text" name="title" required placeholder="例如：在厄希嫩湖被雪山震撼的一天"
+          <input type="text" name="title" required placeholder="例如：宮島海上大鳥居夕陽太震撼了"
             class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
         </div>
         <div>
@@ -3037,9 +3029,9 @@ function renderModalLayer(trip) {
         <input type="text" name="title" required placeholder="店名 / 景點名稱 *"
           class="w-full bg-white rounded-xl px-3 py-2.5 text-xs border border-warmBorder" />
         <div class="grid grid-cols-2 gap-2">
-          <input type="text" name="tag" placeholder="分類標籤 (如 米蘭美食)"
+          <input type="text" name="tag" placeholder="分類標籤 (如 廣島美食)"
             class="bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-          <input type="text" name="priceRange" placeholder="預算區間 (如 €10-20)"
+          <input type="text" name="priceRange" placeholder="預算區間 (如 ¥1000-2000)"
             class="bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
         </div>
         <input type="text" name="mapUrl" placeholder="Google Maps 連結 (選填)"
@@ -3069,7 +3061,7 @@ function renderModalLayer(trip) {
           <option value="保險">保險</option>
           <option value="訂單">訂單</option>
         </select>
-        <input type="text" name="title" required placeholder="文件名稱 (例如：申根保險英文證明)"
+        <input type="text" name="title" required placeholder="文件名稱 (例如：Visit Japan Web QR Code)"
           class="w-full bg-white rounded-xl px-3 py-2.5 text-xs border border-warmBorder" />
         <div>
           <label class="block text-[11px] font-bold text-stone-500 mb-1">到期日 / 使用日期 (選填)</label>
@@ -3288,7 +3280,6 @@ function confirmSwapDays(idxA, idxB) {
   const trip = getCurrentTrip();
   const dayA = trip.days[idxA];
   const dayB = trip.days[idxB];
-  // 交換主題與所有行程項目，保留原日期與順序
   const tempItems = dayA.items;
   const tempEmoji = dayA.themeEmoji;
   const tempTitle = dayA.themeTitle;
@@ -3403,7 +3394,7 @@ function submitItemForm(e, existingId, itemType) {
     title: fd.get('title'),
     location: fd.get('location') || '',
     price: Number(fd.get('price')) || 0,
-    currency: fd.get('currency') || 'TWD',
+    currency: fd.get('currency') || 'JPY',
     includeTax: fd.get('includeTax') === 'on',
     isPotential: fd.get('isPotential') === 'on',
     memberIds,
@@ -3422,7 +3413,7 @@ function submitItemForm(e, existingId, itemType) {
     itemData.arrCity = fd.get('arrCity') || '';
     itemData.arrCode = fd.get('arrCode') || '';
     itemData.arrTime = fd.get('arrTime') || '';
-    itemData.checkedBag = fd.get('checkedBag') || '25kg';
+    itemData.checkedBag = fd.get('checkedBag') || '23kg';
     itemData.carryOnBag = fd.get('carryOnBag') || '7kg';
     itemData.layoverCode = fd.get('layoverCode') || '';
     itemData.layoverDuration = fd.get('layoverDuration') || '';
@@ -3430,7 +3421,7 @@ function submitItemForm(e, existingId, itemType) {
   }
 
   if (itemType === 'TRANSPORT') {
-    itemData.transportMode = fd.get('transportMode') || '鐵路運輸';
+    itemData.transportMode = fd.get('transportMode') || '電車';
     itemData.passTag = fd.get('passTag') || '';
     itemData.depStation = fd.get('depStation') || itemData.title;
     itemData.arrStation = fd.get('arrStation') || '';
@@ -3534,7 +3525,7 @@ function joinTripByCode(e) {
   if (found) {
     selectTrip(found.id);
   } else {
-    showToast('找不到此行程碼，請試試 C7SKHR 或 WFL259', 'error');
+    showToast('找不到此行程碼，請試試 HIJ319', 'error');
   }
 }
 
