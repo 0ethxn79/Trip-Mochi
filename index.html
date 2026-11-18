@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>旅遊手冊 - Trip Mochi</title>
+  <title>我的旅遊手帳 - Trip Mochi</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
@@ -115,11 +115,11 @@
 <script>
 /**
  * ============================================================================
- * Trip Mochi (我的旅遊手帳) - 廣島・山陽 6日完整版
+ * Trip Mochi (我的旅遊手帳) - 預設建立新行程 + 廣島・山陽 6日旅遊手冊範本
  * ============================================================================
  */
 
-const STORAGE_KEY = 'trip_mochi_app_v2';
+const STORAGE_KEY = 'trip_mochi_app_v4';
 
 // 預設匯率 (相對於 TWD)
 const DEFAULT_RATES = {
@@ -143,10 +143,10 @@ const ITEM_TYPES = {
   FLIGHT: { id: 'FLIGHT', label: '航班', tag: 'FLIGHT', color: 'text-teal-700', bg: 'bg-teal-50', border: 'border-teal-200', icon: 'plane' }
 };
 
-// 產生初始示範資料 (已套用 廣島・山陽 6日 行程資料)
+// 產生初始示範資料 (保留廣島範本供隨時參考，但預設 activeTripId 為 null，一打開先顯示建立新行程)
 function createInitialData() {
   return {
-    activeTripId: 'trip_hiroshima_sanyo',
+    activeTripId: null,
     trips: [
       {
         id: 'trip_hiroshima_sanyo',
@@ -684,9 +684,10 @@ let uiState = {
   lightbox: null // { images: string[], index: number }
 };
 
-// 取得當前行程
+// 取得當前行程 (若 activeTripId 為 null 則回傳 null，觸發首頁建立畫面)
 function getCurrentTrip() {
-  return appState.trips.find(t => t.id === appState.activeTripId) || appState.trips[0];
+  if (!appState.activeTripId || !appState.trips || appState.trips.length === 0) return null;
+  return appState.trips.find(t => t.id === appState.activeTripId) || null;
 }
 
 // 格式化日期為 MM/DD 與 週X
@@ -831,6 +832,77 @@ function calculateTripFinancials(trip) {
  */
 function render() {
   const trip = getCurrentTrip();
+  const appEl = document.getElementById('app');
+
+  // 若尚未選擇行程，一打開先顯示「建立新旅遊手帳」，下方可直接點選參考廣島範本
+  if (!trip) {
+    appEl.innerHTML = `
+      <div class="min-h-screen flex flex-col justify-center px-5 py-8">
+        <div class="bg-[#F5F3EB] rounded-3xl p-6 border border-warmBorder shadow-lg space-y-5">
+          <div class="text-center space-y-1.5">
+            <div class="w-14 h-14 rounded-2xl bg-sageLight text-sage mx-auto flex items-center justify-center mb-2">
+              <i data-lucide="plane" class="w-7 h-7"></i>
+            </div>
+            <h1 class="text-xl font-black text-charcoal">建立新旅遊手帳</h1>
+            <p class="text-xs text-stone-400">輸入行程名稱與出發日期，立即開始規劃！</p>
+          </div>
+
+          <form onsubmit="submitCreateTrip(event)" class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold text-stone-600 mb-1">行程名稱 *</label>
+              <input type="text" name="title" required placeholder="例如：東京富士山5天4夜自由行"
+                class="w-full bg-white rounded-2xl px-4 py-3 text-xs border border-warmBorder focus:outline-none focus:border-sage" />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-stone-600 mb-1">出發日期</label>
+                <input type="date" name="startDate" required value="2027-03-19"
+                  class="w-full bg-white rounded-2xl px-3 py-2.5 text-xs border border-warmBorder" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-stone-600 mb-1">旅遊天數</label>
+                <input type="number" name="daysCount" min="1" max="30" value="6" required
+                  class="w-full bg-white rounded-2xl px-3 py-2.5 text-xs border border-warmBorder" />
+              </div>
+            </div>
+            <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage hover:bg-sageDark text-white font-extrabold text-sm shadow-md transition">
+              確認建立行程
+            </button>
+          </form>
+
+          <!-- 收藏行程 / 廣島範本參考入口 -->
+          ${appState.trips && appState.trips.length > 0 ? `
+            <div class="pt-3 border-t border-warmBorder space-y-2">
+              <div class="text-[11px] font-bold text-stone-500">📚 範本與已建立行程 (點擊隨時參考)</div>
+              ${appState.trips.map(t => `
+                <button onclick="selectTrip('${t.id}')"
+                  class="w-full bg-white hover:bg-sageLight/50 rounded-2xl p-3 border border-warmBorder flex items-center justify-between text-left transition">
+                  <div class="min-w-0 pr-2">
+                    <div class="text-xs font-extrabold text-charcoal truncate">${escapeHtml(t.title)}</div>
+                    <div class="text-[10px] font-mono text-stone-400 mt-0.5">Code: ${t.code} · ${t.days.length} 天</div>
+                  </div>
+                  <span class="text-[11px] font-bold text-sage shrink-0">查看 ➔</span>
+                </button>
+              `).join('')}
+            </div>
+          ` : ''}
+
+          <div class="pt-2">
+            <form onsubmit="joinTripByCode(event)" class="flex items-center gap-2">
+              <input type="text" id="trip_code_input" placeholder="或輸入行程碼 (如 HIJ319)..."
+                class="flex-1 bg-white rounded-2xl px-4 py-2.5 text-xs border border-warmBorder focus:outline-none focus:border-sage uppercase" />
+              <button type="submit" class="px-4 py-2.5 rounded-2xl bg-charcoal text-white text-xs font-bold shrink-0">
+                加入
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    `;
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
   if (uiState.activeDayIndex >= trip.days.length) {
     uiState.activeDayIndex = Math.max(0, trip.days.length - 1);
   }
@@ -841,7 +913,6 @@ function render() {
     uiState.activeJournalAuthorId = trip.members[0]?.id || null;
   }
 
-  const appEl = document.getElementById('app');
   appEl.innerHTML = `
     ${renderTopHeader(trip)}
     <main class="flex-1 pb-28 overflow-x-hidden">
@@ -2171,7 +2242,7 @@ function renderModalLayer(trip) {
         </form>
 
         <div class="space-y-2">
-          <div class="text-xs font-bold text-stone-500">我的收藏行程</div>
+          <div class="text-xs font-bold text-stone-500">我的收藏行程與範本</div>
           ${appState.trips.map(t => `
             <div onclick="selectTrip('${t.id}')"
               class="bg-white rounded-2xl p-3.5 border ${t.id === trip.id ? 'border-sage ring-2 ring-sage/20' : 'border-warmBorder'} flex items-center justify-between cursor-pointer hover:bg-cream/40 transition">
@@ -3514,7 +3585,7 @@ function selectTrip(tripId) {
   uiState.activeDayIndex = 0;
   saveState();
   closeModal();
-  showToast('已切換旅遊手帳');
+  showToast('已開啟旅遊手帳');
 }
 
 function joinTripByCode(e) {
@@ -3616,7 +3687,7 @@ function resetAllDemoData() {
   uiState.activeDayIndex = 0;
   saveState();
   closeModal();
-  showToast('已還原完整示範資料！');
+  showToast('已重置資料並返回建立新行程畫面！');
 }
 
 // 匯率管理
