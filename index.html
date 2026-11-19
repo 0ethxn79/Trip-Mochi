@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>我的旅遊手帳 - Trip Mochi</title>
+  <title>我的旅遊手帳 - Trip Mochi Pro</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
@@ -49,7 +49,6 @@
       margin: 0;
       padding: 0;
     }
-    /* 隱藏捲軸但保留滑動功能 */
     .no-scrollbar::-webkit-scrollbar {
       display: none;
     }
@@ -57,7 +56,6 @@
       -ms-overflow-style: none;
       scrollbar-width: none;
     }
-    /* 手機版擬真容器 */
     .app-shell {
       max-width: 480px;
       margin: 0 auto;
@@ -67,14 +65,9 @@
       box-shadow: 0 20px 50px rgba(44, 48, 46, 0.12);
     }
     @media (max-width: 480px) {
-      body {
-        background-color: #F5F3EB;
-      }
-      .app-shell {
-        box-shadow: none;
-      }
+      body { background-color: #F5F3EB; }
+      .app-shell { box-shadow: none; }
     }
-    /* 卡片與彈窗動畫 */
     @keyframes slideUp {
       from { transform: translateY(24px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
@@ -89,7 +82,6 @@
     .animate-fade-in {
       animation: fadeIn 0.18s ease-out forwards;
     }
-    /* 列印 / PDF 樣式 */
     @media print {
       body * { visibility: hidden; }
       #print-area, #print-area * { visibility: visible; }
@@ -109,32 +101,32 @@
   <!-- App 內容由 JavaScript 動態渲染 -->
 </div>
 
+<!-- 隱藏的 JSON 匯入檔案選擇器 -->
+<input type="file" id="json_import_file" accept=".json,application/json" class="hidden" onchange="handleImportJsonFile(event)" />
+
 <!-- 全域 Toast 提示訊息 -->
 <div id="toast-container" class="fixed top-6 left-1/2 -translate-x-1/2 z-[100] pointer-events-none flex flex-col items-center gap-2 w-full max-w-[420px] px-4"></div>
 
 <script>
 /**
  * ============================================================================
- * Trip Mochi (我的旅遊手帳) - 預設建立新行程 + 廣島・山陽 6日旅遊手冊範本
+ * Trip Mochi Pro (我的旅遊手帳) - 完整實戰強化版
  * ============================================================================
  */
 
-const STORAGE_KEY = 'trip_mochi_app_v4';
+const STORAGE_KEY = 'trip_mochi_app_v5';
 
-// 預設匯率 (相對於 TWD)
 const DEFAULT_RATES = {
   TWD: 1,
   JPY: 0.215,
-  CHF: 40.0,
-  EUR: 38.0,
+  KRW: 0.024,
   USD: 32.5,
-  KRW: 0.024
+  EUR: 38.0,
+  CHF: 40.0
 };
 
-// 成員預設可愛頭像選項
 const AVATAR_OPTIONS = ['🐶', '🐱', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐸', '🐧', '🦉'];
 
-// 項目類型定義
 const ITEM_TYPES = {
   SPOT: { id: 'SPOT', label: '景點', tag: 'SPOT', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: 'camera' },
   FOOD: { id: 'FOOD', label: '美食', tag: 'FOOD', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', icon: 'utensils' },
@@ -143,7 +135,7 @@ const ITEM_TYPES = {
   FLIGHT: { id: 'FLIGHT', label: '航班', tag: 'FLIGHT', color: 'text-teal-700', bg: 'bg-teal-50', border: 'border-teal-200', icon: 'plane' }
 };
 
-// 產生初始示範資料 (保留廣島範本供隨時參考，但預設 activeTripId 為 null，一打開先顯示建立新行程)
+// 產生初始示範資料 (保留廣島範本供隨時參考或一鍵套用，預設 activeTripId 為 null 先進入建立新行程)
 function createInitialData() {
   return {
     activeTripId: null,
@@ -152,9 +144,12 @@ function createInitialData() {
         id: 'trip_hiroshima_sanyo',
         code: 'HIJ319',
         title: '⛩️ 廣島・山陽 6日旅遊手冊範本',
-        rates: { TWD: 1, JPY: 0.215, USD: 32.5, KRW: 0.024 },
+        rates: { TWD: 1, JPY: 0.215, KRW: 0.024, USD: 32.5 },
         poolBalance: 0,
         poolLogs: [],
+        cashExchanges: [
+          { id: 'ce_1', date: '2027-03-10', currency: 'JPY', foreignAmount: 80000, twdCost: 17200, note: '銀行外幣ATM提領日圓現鈔' }
+        ],
         members: [
           { id: 'm1', name: '我', avatar: '🐶' }
         ],
@@ -181,10 +176,12 @@ function createInitialData() {
                 arrCity: '廣島',
                 arrAirport: '廣島機場',
                 arrTime: '10:25',
+                isNextDay: false,
                 duration: '2h 15m',
                 hasLayover: false,
                 checkedBag: '23kg',
                 carryOnBag: '7kg',
+                transitHint: '利木津巴士約 45 分鐘進市區',
                 price: 0,
                 currency: 'TWD',
                 includeTax: false,
@@ -199,20 +196,25 @@ function createInitialData() {
                 id: 'item_d1_2',
                 type: 'TRANSPORT',
                 time: '11:30',
-                title: '搭 JR 山陽本線 往宮島口',
+                title: 'JR 廣島 ➝ 宮島口 (轉渡輪)',
                 location: '宮島口站',
-                transportMode: '電車 ・ 約 27 分鐘',
+                transportMode: 'JR電車 + 渡輪 ・ 約 40 分鐘',
                 depStation: '廣島站',
-                arrStation: '宮島口站',
-                viaStation: 'JR 山陽本線',
+                arrStation: '宮島棧橋',
+                viaStation: '宮島口站轉乘',
                 depTime: '11:30',
-                arrTime: '11:57',
-                passTag: 'JR周遊券 / ICOCA',
+                arrTime: '12:10',
+                passTag: 'JR 關西&廣島周遊券',
+                passDayInfo: 'Day 1 / 共 5 天',
+                transitHint: '步行約 3 分鐘至宮島口站前餐廳',
                 price: 0,
                 currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
-                segments: [],
+                segments: [
+                  { mode: 'JR 山陽本線 (岩國方向)', time: '11:30 - 11:57', from: '廣島站 (1號月台)', to: '宮島口站', note: '出站步行 5 分鐘至渡輪口，停留約 8 分鐘候船' },
+                  { mode: 'JR 西日本宮島渡輪', time: '12:00 - 12:10', from: '宮島口棧橋', to: '宮島棧橋', note: '持 JR Pass 免費搭乘（需另付100円宮島訪問稅），建議站右側拍海上大鳥居' }
+                ],
                 memberIds: ['m1'],
                 notes: '先去廣島站寄放行李，再搭車前往宮島口。',
                 images: [],
@@ -222,15 +224,16 @@ function createInitialData() {
               {
                 id: 'item_d1_3',
                 type: 'FOOD',
-                time: '12:00',
-                title: '宮島車站吃午餐',
-                location: '宮島口棧橋',
-                price: 0,
+                time: '12:15',
+                title: '宮島表參道午餐（廣島燒 / 星鰻飯）',
+                location: '宮島表參道商店街',
+                transitHint: '步行約 10 分鐘抵達嚴島神社',
+                price: 1800,
                 currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
                 memberIds: ['m1'],
-                notes: '品嚐廣島燒或星鰻飯（步行約 30 分鐘搭渡輪登島）。',
+                notes: '品嚐廣島燒或星鰻飯，飯後順路吃炸楓葉饅頭。',
                 images: [],
                 imagePos: 'top',
                 focalY: 50
@@ -238,15 +241,16 @@ function createInitialData() {
               {
                 id: 'item_d1_4',
                 type: 'SPOT',
-                time: '13:10',
+                time: '13:30',
                 title: '嚴島神社 ⛩️ (★ 必去)',
                 location: '嚴島神社',
-                price: 0,
+                transitHint: '搭渡輪+JR約 50 分鐘返回廣島市區',
+                price: 300,
                 currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
                 memberIds: ['m1'],
-                notes: '欣賞絕美海上大鳥居與商店街散步（步行約 10 分鐘）。',
+                notes: '欣賞絕美海上大鳥居與商店街散步（出發前可先查當日滿潮/乾潮時間）。',
                 images: [],
                 imagePos: 'top',
                 focalY: 50
@@ -257,12 +261,13 @@ function createInitialData() {
                 time: '18:00',
                 title: '廣島寶可夢中心 (★ 必去)',
                 location: 'Pokemon Center Hiroshima',
+                transitHint: '步行或路面電車約 10 分鐘回飯店',
                 price: 0,
                 currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
                 memberIds: ['m1'],
-                notes: '廣島限定紅色暴鯉龍周邊巡禮（電車約 50 分鐘返回市區）。',
+                notes: '廣島限定紅色暴鯉龍周邊巡禮。',
                 images: [],
                 imagePos: 'top',
                 focalY: 50
@@ -297,12 +302,13 @@ function createInitialData() {
                 time: '09:00',
                 title: '原爆圓頂館 (★ 必去)',
                 location: '原爆圓頂館',
+                transitHint: '步行約 10 分鐘至和平紀念公園',
                 price: 0,
                 currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
                 memberIds: ['m1'],
-                notes: '世界文化遺產歷史地標（電車約 20 分鐘）。',
+                notes: '世界文化遺產歷史地標（廣島路面電車約 20 分鐘）。',
                 images: [],
                 imagePos: 'top',
                 focalY: 50
@@ -313,12 +319,13 @@ function createInitialData() {
                 time: '10:00',
                 title: '廣島和平紀念公園',
                 location: '廣島和平紀念公園',
-                price: 0,
+                transitHint: '搭新幹線約 1 小時 30 分前往新大阪',
+                price: 200,
                 currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
                 memberIds: ['m1'],
-                notes: '沿河岸參觀和平資料館（步行約 10 分鐘）。',
+                notes: '沿河岸參觀和平資料館。',
                 images: [],
                 imagePos: 'top',
                 focalY: 50
@@ -329,6 +336,7 @@ function createInitialData() {
                 time: '16:00',
                 title: '住1道頓堀2號店 (心齋橋 Check in)',
                 location: '住1道頓堀2號店 大阪市',
+                transitHint: '步行約 5 分鐘至道頓堀商圈',
                 price: 0,
                 currency: 'JPY',
                 includeTax: false,
@@ -495,14 +503,15 @@ function createInitialData() {
                 viaStation: '海上餵海鷗',
                 depTime: '13:00',
                 arrTime: '13:25',
-                passTag: '遊覽船票',
-                price: 0,
+                passTag: '海之京都周遊券',
+                passDayInfo: '單日券使用中',
+                price: 1200,
                 currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
                 segments: [],
                 memberIds: ['m1'],
-                notes: '海上近距離欣賞舟屋餵海鷗。',
+                notes: '海上近距離欣賞舟屋餵海鷗（可在船上買蝦味先）。',
                 images: [],
                 imagePos: 'top',
                 focalY: 50
@@ -537,7 +546,7 @@ function createInitialData() {
                 time: '11:00',
                 title: '平等院',
                 location: '平等院',
-                price: 0,
+                price: 700,
                 currency: 'JPY',
                 includeTax: false,
                 isPotential: false,
@@ -577,6 +586,7 @@ function createInitialData() {
                 time: '09:30',
                 title: '自由活動 & 最後採買',
                 location: '關西國際機場',
+                transitHint: '南海電鐵/HARUKA約 45 分鐘直達關西機場',
                 price: 0,
                 currency: 'JPY',
                 includeTax: false,
@@ -603,6 +613,7 @@ function createInitialData() {
                 arrCity: '台北桃園',
                 arrAirport: '台北桃園國際機場',
                 arrTime: '21:25',
+                isNextDay: false,
                 duration: '3h 25m',
                 hasLayover: false,
                 checkedBag: '23kg',
@@ -636,7 +647,20 @@ function createInitialData() {
             { id: 'pk3', category: '衣物', name: '保暖外套、好走運動鞋', packed: false }
           ]
         },
-        pocketList: [],
+        pocketList: [
+          {
+            id: 'pl_demo1',
+            type: '美食',
+            title: '長田屋 廣島燒 (原爆圓頂館旁)',
+            tag: '廣島必吃',
+            rating: 4.8,
+            priceRange: '¥1,200 - ¥1,800',
+            mapUrl: 'https://maps.google.com/?q=長田屋+広島',
+            notes: '招牌長田屋燒加滿蔥花與半熟蛋，建議避開 12:00 尖峰時段。',
+            status: '想去',
+            images: []
+          }
+        ],
         documents: []
       }
     ]
@@ -662,35 +686,35 @@ function saveState() {
   }
 }
 
-// UI 暫態狀態 (不需寫入 localStorage)
+// UI 暫態狀態
 let uiState = {
   activeTab: 'itinerary', // itinerary | bookings | expenses | journal | lists | members
   activeDayIndex: 0,
-  itineraryFilter: 'ALL', // ALL | FOOD | SPOT | SHOPPING
+  itineraryFilter: 'ALL',
   swapSourceDayIndex: null,
-  expandedItems: {}, // itemId -> boolean
-  bookingSubTab: 'FLIGHT', // FLIGHT | HOTEL | CAR
-  expenseSubTab: 'SPLIT', // SPLIT | POOL
+  expandedItems: {},
+  bookingSubTab: 'FLIGHT',
+  expenseSubTab: 'SPLIT', // SPLIT | CASH | POOL
   expenseFilterMember: 'ALL',
-  listSubTab: 'TODO', // TODO | PACKING | POCKET | DOCS
-  todoFilterMember: 'ALL',
+  listSubTab: 'TODO',
   packingMemberId: null,
   pocketSearch: '',
   pocketTypeFilter: 'ALL',
   pocketStatusFilter: 'ALL',
   docCategoryFilter: 'ALL',
   activeJournalAuthorId: null,
-  modal: null, // { type: string, payload?: any }
-  lightbox: null // { images: string[], index: number }
+  modal: null,
+  lightbox: null,
+  // 表單暫存狀態（用於多段轉乘編輯與非均分切換）
+  tempSegments: [],
+  tempSplitMode: 'EQUAL' // EQUAL | CUSTOM
 };
 
-// 取得當前行程 (若 activeTripId 為 null 則回傳 null，觸發首頁建立畫面)
 function getCurrentTrip() {
   if (!appState.activeTripId || !appState.trips || appState.trips.length === 0) return null;
   return appState.trips.find(t => t.id === appState.activeTripId) || null;
 }
 
-// 格式化日期為 MM/DD 與 週X
 function formatDateParts(dateStr) {
   const parts = dateStr.split('-');
   if (parts.length !== 3) return { md: dateStr, weekday: '' };
@@ -702,14 +726,12 @@ function formatDateParts(dateStr) {
   };
 }
 
-// 金額換算為 TWD
 function convertToTWD(amount, currency, rates) {
   const num = Number(amount) || 0;
   const rate = (rates && rates[currency]) ? Number(rates[currency]) : (DEFAULT_RATES[currency] || 1);
   return Math.round(num * rate);
 }
 
-// Toast 提示訊息 (替代 alert)
 function showToast(message, type = 'success') {
   const container = document.getElementById('toast-container');
   const el = document.createElement('div');
@@ -726,7 +748,7 @@ function showToast(message, type = 'success') {
 
 /**
  * ============================================================================
- * 計算邏輯：個人預計分攤總額、潛在花費、分帳結算
+ * 計算邏輯：個人預計分攤總額、潛在花費、均分/非均分結算、外幣現金餘額
  * ============================================================================
  */
 function calculateTripFinancials(trip) {
@@ -736,8 +758,8 @@ function calculateTripFinancials(trip) {
     memberTotals[m.id] = { totalTWD: 0, breakdown: [] };
   });
 
-  // 1. 計算行程項目中的確定花費 (非潛在花費)
-  trip.days.forEach((day, dIdx) => {
+  // 1. 行程項目中的確定花費
+  trip.days.forEach((day) => {
     day.items.forEach(item => {
       const price = Number(item.price) || 0;
       if (price <= 0 || item.isPotential) return;
@@ -762,7 +784,7 @@ function calculateTripFinancials(trip) {
     });
   });
 
-  // 2. 計算潛在花費清單
+  // 2. 潛在花費清單
   const potentialItems = [];
   let totalPotentialTWD = 0;
   trip.days.forEach((day, dIdx) => {
@@ -787,7 +809,7 @@ function calculateTripFinancials(trip) {
     });
   });
 
-  // 3. 記帳分帳計算
+  // 3. 記帳分帳計算（支援均分與自訂非均分金額）
   let totalSplitExpenseTWD = 0;
   const paidByMember = {};
   const owedByMember = {};
@@ -801,18 +823,50 @@ function calculateTripFinancials(trip) {
     const withFee = exp.extraFee ? raw * 1.015 : raw;
     const twd = convertToTWD(withFee, exp.currency || 'TWD', rates);
     totalSplitExpenseTWD += twd;
+
     if (paidByMember[exp.payerId] !== undefined) {
       paidByMember[exp.payerId] += twd;
     }
-    const splitters = (exp.splitMemberIds && exp.splitMemberIds.length > 0)
-      ? exp.splitMemberIds.filter(id => owedByMember[id] !== undefined)
-      : trip.members.map(m => m.id);
-    if (splitters.length > 0) {
-      const share = Math.round(twd / splitters.length);
-      splitters.forEach(id => {
-        owedByMember[id] += share;
+
+    if (exp.splitMode === 'CUSTOM' && exp.customSplits) {
+      Object.entries(exp.customSplits).forEach(([mid, origAmt]) => {
+        if (owedByMember[mid] !== undefined) {
+          const mWithFee = exp.extraFee ? (Number(origAmt) || 0) * 1.015 : (Number(origAmt) || 0);
+          owedByMember[mid] += convertToTWD(mWithFee, exp.currency || 'TWD', rates);
+        }
       });
+    } else {
+      const splitters = (exp.splitMemberIds && exp.splitMemberIds.length > 0)
+        ? exp.splitMemberIds.filter(id => owedByMember[id] !== undefined)
+        : trip.members.map(m => m.id);
+      if (splitters.length > 0) {
+        const share = Math.round(twd / splitters.length);
+        splitters.forEach(id => {
+          owedByMember[id] += share;
+        });
+      }
     }
+  });
+
+  // 4. 外幣現金餘額統計
+  const cashSummary = {}; // currency -> { boughtForeign, boughtTWD, spentForeign, remainingForeign }
+  (trip.cashExchanges || []).forEach(ex => {
+    const cur = ex.currency || 'JPY';
+    if (!cashSummary[cur]) cashSummary[cur] = { boughtForeign: 0, boughtTWD: 0, spentForeign: 0, remainingForeign: 0 };
+    cashSummary[cur].boughtForeign += Number(ex.foreignAmount) || 0;
+    cashSummary[cur].boughtTWD += Number(ex.twdCost) || 0;
+  });
+
+  (trip.expenses || []).forEach(exp => {
+    if (exp.method === '現金支付' && exp.currency && exp.currency !== 'TWD') {
+      const cur = exp.currency;
+      if (!cashSummary[cur]) cashSummary[cur] = { boughtForeign: 0, boughtTWD: 0, spentForeign: 0, remainingForeign: 0 };
+      cashSummary[cur].spentForeign += Number(exp.amount) || 0;
+    }
+  });
+
+  Object.keys(cashSummary).forEach(cur => {
+    cashSummary[cur].remainingForeign = cashSummary[cur].boughtForeign - cashSummary[cur].spentForeign;
   });
 
   return {
@@ -821,7 +875,8 @@ function calculateTripFinancials(trip) {
     totalPotentialTWD,
     totalSplitExpenseTWD,
     paidByMember,
-    owedByMember
+    owedByMember,
+    cashSummary
   };
 }
 
@@ -834,7 +889,7 @@ function render() {
   const trip = getCurrentTrip();
   const appEl = document.getElementById('app');
 
-  // 若尚未選擇行程，一打開先顯示「建立新旅遊手帳」，下方可直接點選參考廣島範本
+  // 若尚未選擇行程，一打開先顯示「建立新旅遊手帳」，下方可直接點選或套用廣島範本，並支援匯入 JSON 備份
   if (!trip) {
     appEl.innerHTML = `
       <div class="min-h-screen flex flex-col justify-center px-5 py-8">
@@ -844,7 +899,7 @@ function render() {
               <i data-lucide="plane" class="w-7 h-7"></i>
             </div>
             <h1 class="text-xl font-black text-charcoal">建立新旅遊手帳</h1>
-            <p class="text-xs text-stone-400">輸入行程名稱與出發日期，立即開始規劃！</p>
+            <p class="text-xs text-stone-400">設定行程名稱與出發日期，或一鍵套用範本開始規劃！</p>
           </div>
 
           <form onsubmit="submitCreateTrip(event)" class="space-y-4">
@@ -866,37 +921,54 @@ function render() {
               </div>
             </div>
             <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage hover:bg-sageDark text-white font-extrabold text-sm shadow-md transition">
-              確認建立行程
+              確認建立空白行程
             </button>
           </form>
 
-          <!-- 收藏行程 / 廣島範本參考入口 -->
+          <!-- 收藏行程 / 廣島範本參考與一鍵套用入口 -->
           ${appState.trips && appState.trips.length > 0 ? `
-            <div class="pt-3 border-t border-warmBorder space-y-2">
-              <div class="text-[11px] font-bold text-stone-500">📚 範本與已建立行程 (點擊隨時參考)</div>
+            <div class="pt-3 border-t border-warmBorder space-y-2.5">
+              <div class="text-[11px] font-bold text-stone-500">📚 範本與已建立行程</div>
               ${appState.trips.map(t => `
-                <button onclick="selectTrip('${t.id}')"
-                  class="w-full bg-white hover:bg-sageLight/50 rounded-2xl p-3 border border-warmBorder flex items-center justify-between text-left transition">
-                  <div class="min-w-0 pr-2">
-                    <div class="text-xs font-extrabold text-charcoal truncate">${escapeHtml(t.title)}</div>
-                    <div class="text-[10px] font-mono text-stone-400 mt-0.5">Code: ${t.code} · ${t.days.length} 天</div>
+                <div class="bg-white rounded-2xl p-3 border border-warmBorder space-y-2">
+                  <div class="flex items-center justify-between">
+                    <div class="min-w-0 pr-2">
+                      <div class="text-xs font-extrabold text-charcoal truncate">${escapeHtml(t.title)}</div>
+                      <div class="text-[10px] font-mono text-stone-400 mt-0.5">Code: ${t.code} · ${t.days.length} 天</div>
+                    </div>
                   </div>
-                  <span class="text-[11px] font-bold text-sage shrink-0">查看 ➔</span>
-                </button>
+                  <div class="grid grid-cols-2 gap-2 pt-1">
+                    <button onclick="selectTrip('${t.id}')"
+                      class="py-2 rounded-xl bg-cream hover:bg-creamDark text-charcoal text-[11px] font-bold border border-warmBorder transition">
+                      👀 開啟查看
+                    </button>
+                    <button onclick="openModal('CLONE_TEMPLATE_MODAL', '${t.id}')"
+                      class="py-2 rounded-xl bg-sageLight hover:bg-sage hover:text-white text-sageDark text-[11px] font-extrabold transition">
+                      ✨ 套用為新行程
+                    </button>
+                  </div>
+                </div>
               `).join('')}
             </div>
           ` : ''}
 
-          <div class="pt-2">
+          <!-- 行程碼加入 + 匯入 JSON 備份 -->
+          <div class="pt-2 space-y-2.5">
             <form onsubmit="joinTripByCode(event)" class="flex items-center gap-2">
-              <input type="text" id="trip_code_input" placeholder="或輸入行程碼 (如 HIJ319)..."
+              <input type="text" id="trip_code_input" placeholder="輸入行程碼 (如 HIJ319)..."
                 class="flex-1 bg-white rounded-2xl px-4 py-2.5 text-xs border border-warmBorder focus:outline-none focus:border-sage uppercase" />
               <button type="submit" class="px-4 py-2.5 rounded-2xl bg-charcoal text-white text-xs font-bold shrink-0">
                 加入
               </button>
             </form>
+            <button onclick="triggerImportJson()"
+              class="w-full py-2.5 rounded-2xl bg-white hover:bg-cream text-stone-600 text-xs font-bold border border-dashed border-stone-300 flex items-center justify-center gap-1.5 transition">
+              <i data-lucide="upload" class="w-3.5 h-3.5 text-sage"></i>
+              <span>從 JSON 備份檔匯入行程</span>
+            </button>
           </div>
         </div>
+        ${renderModalLayer(null)}
       </div>
     `;
     if (window.lucide) lucide.createIcons();
@@ -955,7 +1027,7 @@ function renderTopHeader(trip) {
           </span>
           <button onclick="openModal('SETTINGS')"
             class="w-8 h-8 rounded-full bg-white hover:bg-stone-50 border border-warmBorder flex items-center justify-center text-charcoal shadow-sm active:scale-95 transition"
-            title="行程設定與匯出PDF">
+            title="行程設定、JSON備份與匯出PDF">
             <i data-lucide="settings" class="w-4 h-4"></i>
           </button>
         </div>
@@ -970,11 +1042,19 @@ function renderTopHeader(trip) {
       </div>
 
       <div class="mt-2 flex items-center justify-between">
-        <button onclick="openModal('SHARE_ITINERARY')"
-          class="inline-flex items-center gap-1.5 bg-sageLight hover:bg-[#dce8da] text-sageDark text-xs font-bold px-3 py-1.5 rounded-full transition active:scale-95">
-          <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
-          <span>分享行程</span>
-        </button>
+        <div class="flex items-center gap-1.5">
+          <button onclick="openModal('SHARE_ITINERARY')"
+            class="inline-flex items-center gap-1 bg-sageLight hover:bg-[#dce8da] text-sageDark text-xs font-bold px-3 py-1.5 rounded-full transition active:scale-95">
+            <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+            <span>分享文字</span>
+          </button>
+          <button onclick="exportTripJson()"
+            class="inline-flex items-center gap-1 bg-white hover:bg-cream text-stone-600 text-xs font-bold px-2.5 py-1.5 rounded-full border border-warmBorder transition active:scale-95"
+            title="匯出 JSON 備份檔">
+            <i data-lucide="download" class="w-3.5 h-3.5 text-sage"></i>
+            <span>備份</span>
+          </button>
+        </div>
         <div class="flex -space-x-1.5">
           ${trip.members.map(m => `
             <div onclick="switchTab('members')" title="${escapeHtml(m.name)}"
@@ -1023,11 +1103,6 @@ function renderBottomNav() {
   `;
 }
 
-/**
- * ============================================================================
- * 分頁路由器
- * ============================================================================
- */
 function renderActiveTabContent(trip) {
   switch (uiState.activeTab) {
     case 'itinerary': return renderItineraryTab(trip);
@@ -1042,20 +1117,18 @@ function renderActiveTabContent(trip) {
 
 /**
  * ============================================================================
- * TAB 1: 行程 (Itinerary)
+ * TAB 1: 行程 (Itinerary) - 含時間排序、卡片間移動提示、跨日航班、多段轉乘、一鍵轉記帳
  * ============================================================================
  */
 function renderItineraryTab(trip) {
   const currentDay = trip.days[uiState.activeDayIndex] || trip.days[0];
   const fin = calculateTripFinancials(trip);
 
-  // 篩選當日項目
   const allItems = currentDay ? currentDay.items : [];
   const filteredItems = allItems.filter(item => {
     if (uiState.itineraryFilter === 'ALL') return true;
     if (uiState.itineraryFilter === 'FOOD') return item.type === 'FOOD';
     if (uiState.itineraryFilter === 'SPOT') return item.type === 'SPOT';
-    if (uiState.itineraryFilter === 'SHOPPING') return item.title.includes('購物') || item.notes?.includes('買');
     return true;
   });
 
@@ -1072,24 +1145,21 @@ function renderItineraryTab(trip) {
             <span>行程日期</span>
             ${uiState.swapSourceDayIndex !== null ? `
               <span class="ml-1 text-[11px] bg-terracottaLight text-terracotta px-2 py-0.5 rounded-full animate-pulse">
-                請點選另一天進行對調
+                點選另一天對調
               </span>
             ` : ''}
           </div>
           <div class="flex items-center gap-1.5">
-            <!-- 當日主題膠囊 -->
             <button onclick="openModal('EDIT_DAY_INFO', ${uiState.activeDayIndex})"
               class="inline-flex items-center gap-1 bg-cream hover:bg-creamDark text-charcoal text-xs font-semibold px-2.5 py-1 rounded-full border border-warmBorder transition">
               <span>${currentDay.themeEmoji || '📍'}</span>
-              <span class="max-w-[130px] truncate">${escapeHtml(currentDay.themeTitle || '點擊編輯主題')}</span>
+              <span class="max-w-[125px] truncate">${escapeHtml(currentDay.themeTitle || '點擊編輯主題')}</span>
             </button>
-            <!-- 對調日期按鈕 -->
             <button onclick="toggleSwapMode()"
               title="對調日期"
               class="w-7 h-7 rounded-full flex items-center justify-center border transition ${uiState.swapSourceDayIndex !== null ? 'bg-terracotta text-white border-terracotta' : 'bg-cream text-stone-600 border-warmBorder hover:bg-creamDark'}">
               <i data-lucide="arrow-left-right" class="w-3.5 h-3.5"></i>
             </button>
-            <!-- 刪除當天按鈕 -->
             ${trip.days.length > 1 ? `
               <button onclick="openModal('DELETE_DAY_CONFIRM', ${uiState.activeDayIndex})"
                 title="刪除此天"
@@ -1100,7 +1170,6 @@ function renderItineraryTab(trip) {
           </div>
         </div>
 
-        <!-- 橫向日期滑動列表 -->
         <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
           ${trip.days.map((day, idx) => {
             const { md, weekday } = formatDateParts(day.date);
@@ -1123,80 +1192,109 @@ function renderItineraryTab(trip) {
             `;
           }).join('')}
 
-          <!-- 新增天數按鈕 -->
           <button onclick="addNewDay()"
             class="shrink-0 w-[52px] h-[66px] rounded-2xl bg-cream hover:bg-sageLight text-stone-500 hover:text-sage border border-dashed border-stone-300 flex items-center justify-center transition active:scale-95"
             title="新增一天">
             <i data-lucide="plus" class="w-5 h-5"></i>
           </button>
         </div>
-
-        <p class="text-[11px] text-stone-400 mt-2 flex items-center gap-1">
-          <span>* 點擊右上角</span>
-          <i data-lucide="arrow-left-right" class="w-3 h-3 inline"></i>
-          <span>可與其他日期對調行程；點擊主題膠囊可自訂當日主題</span>
-        </p>
       </div>
 
-      <!-- 分類篩選列 + 潛在花費按鈕 -->
-      <div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+      <!-- 分類篩選列 + 依時間重排 + 潛在花費 -->
+      <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
         <button onclick="setItineraryFilter('ALL')"
-          class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition
+          class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 transition
           ${uiState.itineraryFilter === 'ALL' ? 'bg-charcoal text-white shadow-sm' : 'bg-white text-charcoal border border-warmBorder'}">
           <span>全部</span>
-          <span class="px-1.5 py-0.2 rounded-full text-[10px] ${uiState.itineraryFilter === 'ALL' ? 'bg-white/20 text-white' : 'bg-cream text-stone-600'}">${allItems.length}</span>
+          <span class="px-1.5 rounded-full text-[10px] ${uiState.itineraryFilter === 'ALL' ? 'bg-white/20 text-white' : 'bg-cream text-stone-600'}">${allItems.length}</span>
         </button>
 
         <button onclick="setItineraryFilter('FOOD')"
-          class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 transition
+          class="shrink-0 px-2.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 transition
           ${uiState.itineraryFilter === 'FOOD' ? 'bg-amber-600 text-white shadow-sm' : 'bg-white text-charcoal border border-warmBorder'}">
           <span>🍴 美食</span>
           <span class="text-[10px] opacity-80">${foodCount}</span>
         </button>
 
         <button onclick="setItineraryFilter('SPOT')"
-          class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 transition
+          class="shrink-0 px-2.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 transition
           ${uiState.itineraryFilter === 'SPOT' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white text-charcoal border border-warmBorder'}">
           <span>🧭 探索</span>
           <span class="text-[10px] opacity-80">${spotCount}</span>
         </button>
 
+        ${allItems.length > 1 ? `
+          <button onclick="sortDayItemsByTime()"
+            class="shrink-0 px-2.5 py-1.5 rounded-full text-xs font-bold bg-white hover:bg-sageLight text-sageDark border border-warmBorder flex items-center gap-1 transition"
+            title="依時間先後自動排列當日卡片">
+            <i data-lucide="arrow-up-down" class="w-3 h-3"></i>
+            <span>時間重排</span>
+          </button>
+        ` : ''}
+
         <button onclick="openModal('POTENTIAL_EXPENSES')"
-          class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold bg-terracottaLight hover:bg-orange-100 text-terracotta border border-orange-200 flex items-center gap-1 transition">
+          class="shrink-0 px-2.5 py-1.5 rounded-full text-xs font-bold bg-terracottaLight hover:bg-orange-100 text-terracotta border border-orange-200 flex items-center gap-1 transition">
           <span>💰 潛在花費</span>
           ${fin.potentialItems.length > 0 ? `<span class="bg-terracotta text-white text-[10px] px-1.5 rounded-full">${fin.potentialItems.length}</span>` : ''}
         </button>
       </div>
 
-      <!-- 當日時間軸卡片列表 -->
+      <!-- 當日時間軸卡片列表 (含卡片間移動方式提示) -->
       ${filteredItems.length === 0 ? `
         <div class="bg-white/70 rounded-3xl border border-dashed border-warmBorder py-16 px-6 text-center">
           <div class="w-14 h-14 rounded-2xl bg-sageLight text-sage mx-auto flex items-center justify-center mb-3">
             <i data-lucide="map-pin" class="w-7 h-7"></i>
           </div>
           <p class="text-sm font-bold text-stone-600">此日期尚無行程</p>
-          <p class="text-xs text-stone-400 mt-1">點擊右下角「+ 新增」開始規劃您的精彩旅程！</p>
+          <p class="text-xs text-stone-400 mt-1">點擊右下角「+ 新增」或從「清單 ➝ 想去」排入行程！</p>
         </div>
       ` : `
-        <div class="space-y-3.5 relative">
-          ${filteredItems.map((item, idx) => renderItineraryCard(trip, item, idx)).join('')}
+        <div class="space-y-1">
+          ${filteredItems.map((item, idx) => {
+            const nextItem = filteredItems[idx + 1];
+            const gapLabel = nextItem ? getTimeGapLabel(item, nextItem) : '';
+            return `
+              ${renderItineraryCard(trip, item, idx)}
+              ${nextItem ? `
+                <div class="flex items-center justify-center py-1.5">
+                  <div class="inline-flex items-center gap-1.5 bg-white/85 border border-warmBorder px-3 py-1 rounded-full text-[11px] text-stone-500 shadow-2xs">
+                    <i data-lucide="footprints" class="w-3 h-3 text-sage"></i>
+                    <span>${escapeHtml(item.transitHint || gapLabel || '前往下一站')}</span>
+                  </div>
+                </div>
+              ` : ''}
+            `;
+          }).join('')}
         </div>
       `}
     </div>
   `;
 }
 
+// 計算兩張行程卡片之間的時間差提示
+function getTimeGapLabel(curr, next) {
+  const startStr = curr.arrTime || curr.time;
+  const endStr = next.time;
+  if (!startStr || !endStr || !startStr.includes(':') || !endStr.includes(':')) return '';
+  const [h1, m1] = startStr.split(':').map(Number);
+  const [h2, m2] = endStr.split(':').map(Number);
+  const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+  if (diff <= 0 || diff > 720) return '';
+  const hrs = Math.floor(diff / 60);
+  const mins = diff % 60;
+  return hrs > 0 ? `間隔約 ${hrs} 小時 ${mins > 0 ? mins + ' 分' : ''}` : `移動 / 停留間隔約 ${mins} 分鐘`;
+}
+
 /**
- * 渲染單張行程卡片 (支援航班、交通、景點/美食/住宿與自訂照片位置)
+ * 渲染單張行程卡片 (含跨日+1標記、票券天數提醒、多段轉乘明細、一鍵轉入記帳、垂直置中備註)
  */
 function renderItineraryCard(trip, item, idx) {
   const meta = ITEM_TYPES[item.type] || ITEM_TYPES.SPOT;
   const isExpanded = !!uiState.expandedItems[item.id];
   const hasImages = item.images && item.images.length > 0;
-  const imgPos = item.imagePos || 'top'; // top | middle | bottom
+  const imgPos = item.imagePos || 'top';
   const focalY = item.focalY ?? 50;
 
-  // 照片區塊 HTML
   const renderPhotoBanner = () => {
     if (!hasImages) return '';
     return `
@@ -1214,12 +1312,11 @@ function renderItineraryCard(trip, item, idx) {
     `;
   };
 
-  // 參與成員列
   const participants = (item.memberIds || [])
     .map(id => trip.members.find(m => m.id === id))
     .filter(Boolean);
 
-  // 航班專屬視覺區塊
+  // 航班專屬視覺區塊 (支援 +1 跨日標記)
   const renderFlightDetails = () => `
     <div class="mt-3 bg-cream/70 rounded-2xl p-3.5 border border-warmBorder">
       <div class="flex items-center justify-between text-xs mb-2.5">
@@ -1263,31 +1360,41 @@ function renderItineraryCard(trip, item, idx) {
           <span class="inline-block text-[10px] font-bold bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded mb-1">抵達</span>
           <div class="text-base font-extrabold text-charcoal">${escapeHtml(item.arrCity || '')} <span class="text-sky-700">${escapeHtml(item.arrCode || '')}</span></div>
           <div class="text-[11px] text-stone-400 truncate">${escapeHtml(item.arrAirport || '')}</div>
-          <div class="text-lg font-black text-charcoal mt-0.5">${escapeHtml(item.arrTime || '')}</div>
+          <div class="text-lg font-black text-charcoal mt-0.5 inline-flex items-baseline justify-end gap-1">
+            <span>${escapeHtml(item.arrTime || '')}</span>
+            ${item.isNextDay ? `<span class="text-[10px] font-extrabold bg-red-500 text-white px-1.5 py-0.5 rounded-md">+1天</span>` : ''}
+          </div>
         </div>
       </div>
 
       <div class="mt-2.5 pt-2.5 border-t border-warmBorder flex flex-wrap items-center justify-between gap-2 text-[11px] text-stone-600">
-        <span>🧳 託運行李 <b>${escapeHtml(item.checkedBag || '23kg')}</b></span>
-        <span>🎒 手提行李 <b>${escapeHtml(item.carryOnBag || '7kg')}</b></span>
-        ${item.nextFlightNo ? `<span>🛫 接續 <b>${escapeHtml(item.nextFlightNo)}</b></span>` : ''}
+        <span>🧳 託運 <b>${escapeHtml(item.checkedBag || '23kg')}</b></span>
+        <span>🎒 手提 <b>${escapeHtml(item.carryOnBag || '7kg')}</b></span>
+        ${item.isNextDay ? `<span class="text-red-600 font-bold">🌙 紅眼跨日抵達</span>` : ''}
       </div>
     </div>
   `;
 
-  // 交通路線視覺區塊
+  // 交通路線視覺區塊 (含票券天數提醒 + 多段轉乘)
   const renderTransportDetails = () => `
     <div class="mt-3 bg-cream/70 rounded-2xl p-3.5 border border-warmBorder">
-      <div class="flex items-center justify-between text-xs mb-2">
+      <div class="flex items-center justify-between flex-wrap gap-1.5 text-xs mb-2">
         <span class="font-bold text-sky-800 flex items-center gap-1">
           <i data-lucide="train-front" class="w-3.5 h-3.5"></i>
           ${escapeHtml(item.transportMode || '大眾運輸')}
         </span>
-        ${item.passTag ? `
-          <span class="text-[11px] font-bold bg-sageLight text-sageDark px-2 py-0.5 rounded-full">
-            ${escapeHtml(item.passTag)}
-          </span>
-        ` : ''}
+        <div class="flex items-center gap-1 flex-wrap">
+          ${item.passTag ? `
+            <span class="text-[11px] font-bold bg-sageLight text-sageDark px-2 py-0.5 rounded-full">
+              🎫 ${escapeHtml(item.passTag)}
+            </span>
+          ` : ''}
+          ${item.passDayInfo ? `
+            <span class="text-[10px] font-extrabold bg-emerald-600 text-white px-2 py-0.5 rounded-full">
+              ${escapeHtml(item.passDayInfo)}
+            </span>
+          ` : ''}
+        </div>
       </div>
 
       <div class="grid grid-cols-3 items-center gap-2 py-1">
@@ -1306,8 +1413,8 @@ function renderItineraryCard(trip, item, idx) {
           </div>
           ${item.segments && item.segments.length > 0 ? `
             <button onclick="event.stopPropagation(); toggleExpandItem('${item.id}')"
-              class="mt-1.5 text-[11px] font-bold text-sage hover:underline flex items-center gap-0.5">
-              <span>${isExpanded ? '收合詳情' : `轉乘明細 (${item.segments.length})`}</span>
+              class="mt-1.5 text-[11px] font-bold text-sage hover:underline flex items-center gap-0.5 bg-white px-2 py-0.5 rounded-full border border-warmBorder">
+              <span>${isExpanded ? '收合轉乘' : `多段轉乘 (${item.segments.length})`}</span>
               <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3 h-3"></i>
             </button>
           ` : ''}
@@ -1315,7 +1422,10 @@ function renderItineraryCard(trip, item, idx) {
 
         <div class="text-right">
           <span class="text-[10px] font-bold bg-stone-200/80 text-stone-700 px-1.5 py-0.5 rounded">抵達</span>
-          <div class="text-base font-black text-charcoal mt-1">${escapeHtml(item.arrTime || '--:--')}</div>
+          <div class="text-base font-black text-charcoal mt-1 inline-flex items-baseline justify-end gap-1">
+            <span>${escapeHtml(item.arrTime || '--:--')}</span>
+            ${item.isNextDay ? `<span class="text-[10px] font-extrabold bg-red-500 text-white px-1 py-0.5 rounded">+1</span>` : ''}
+          </div>
           <div class="text-xs font-bold text-charcoal line-clamp-2 mt-0.5">${escapeHtml(item.arrStation || '')}</div>
         </div>
       </div>
@@ -1325,7 +1435,7 @@ function renderItineraryCard(trip, item, idx) {
           ${item.segments.map((seg, sIdx) => `
             <div class="bg-white rounded-xl p-2.5 border border-warmBorder text-xs">
               <div class="flex items-center justify-between font-bold text-charcoal mb-1">
-                <span>${sIdx + 1}. ${escapeHtml(seg.mode || '列車')}</span>
+                <span>第 ${sIdx + 1} 段 · ${escapeHtml(seg.mode || '列車')}</span>
                 <span class="text-sage font-mono">${escapeHtml(seg.time || '')}</span>
               </div>
               <div class="text-stone-600 flex items-center gap-1.5">
@@ -1333,7 +1443,7 @@ function renderItineraryCard(trip, item, idx) {
                 <span class="text-stone-400">→</span>
                 <span class="font-semibold">${escapeHtml(seg.to)}</span>
               </div>
-              ${seg.note ? `<div class="text-[11px] text-amber-700 mt-1">💡 ${escapeHtml(seg.note)}</div>` : ''}
+              ${seg.note ? `<div class="text-[11px] text-amber-700 mt-1">⏱️ ${escapeHtml(seg.note)}</div>` : ''}
             </div>
           `).join('')}
         </div>
@@ -1348,9 +1458,8 @@ function renderItineraryCard(trip, item, idx) {
       ${hasImages && imgPos === 'top' ? renderPhotoBanner() : ''}
 
       <div class="p-4">
-        <!-- 卡片頂部時間與分類標籤 -->
         <div class="flex items-center justify-between gap-2 mb-1.5">
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
             <span class="w-8 h-8 rounded-xl ${meta.bg} ${meta.color} flex items-center justify-center shrink-0">
               <i data-lucide="${meta.icon}" class="w-4 h-4"></i>
             </span>
@@ -1368,13 +1477,19 @@ function renderItineraryCard(trip, item, idx) {
           </div>
 
           ${Number(item.price) > 0 ? `
-            <span class="text-xs font-extrabold text-sageDark bg-sageLight/70 px-2.5 py-1 rounded-full">
-              ${escapeHtml(item.currency || 'TWD')} ${Number(item.price).toLocaleString()}
-            </span>
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-extrabold text-sageDark bg-sageLight/70 px-2.5 py-1 rounded-full">
+                ${escapeHtml(item.currency || 'TWD')} ${Number(item.price).toLocaleString()}
+              </span>
+              <button onclick="event.stopPropagation(); convertItemToExpense('${item.id}')"
+                title="一鍵帶入記帳分帳"
+                class="text-[11px] font-extrabold bg-charcoal hover:bg-black text-white px-2.5 py-1 rounded-full shadow-2xs active:scale-95 transition">
+                +記帳
+              </button>
+            </div>
           ` : ''}
         </div>
 
-        <!-- 標題與地點 -->
         <h3 class="text-base font-extrabold text-charcoal leading-snug">
           ${escapeHtml(item.title)}
         </h3>
@@ -1395,11 +1510,10 @@ function renderItineraryCard(trip, item, idx) {
 
         ${hasImages && imgPos === 'middle' ? renderPhotoBanner() : ''}
 
-        <!-- 類型專屬資訊 -->
         ${item.type === 'FLIGHT' ? renderFlightDetails() : ''}
         ${item.type === 'TRANSPORT' ? renderTransportDetails() : ''}
 
-        <!-- 備註區塊 -->
+        <!-- 備註區塊 (上下垂直完美置中) -->
         ${item.notes ? `
           <div class="mt-3 bg-cream/60 rounded-2xl p-3.5 text-xs text-stone-700 leading-relaxed border border-warmBorder/70 flex items-center">
             <div class="whitespace-pre-line w-full">${escapeHtml(item.notes.trim())}</div>
@@ -1408,7 +1522,6 @@ function renderItineraryCard(trip, item, idx) {
 
         ${hasImages && imgPos === 'bottom' ? renderPhotoBanner() : ''}
 
-        <!-- 參與成員列 -->
         ${participants.length > 0 ? `
           <div class="mt-3 pt-2.5 border-t border-warmBorder/60 flex items-center justify-between">
             <span class="text-[10px] font-bold tracking-wider text-stone-400 uppercase">MEMBERS</span>
@@ -1429,7 +1542,7 @@ function renderItineraryCard(trip, item, idx) {
 
 /**
  * ============================================================================
- * TAB 2: 預訂總覽 (Bookings: 機票 / 住宿 / 租車)
+ * TAB 2: 預訂總覽 (Bookings)
  * ============================================================================
  */
 function renderBookingsTab(trip) {
@@ -1450,7 +1563,6 @@ function renderBookingsTab(trip) {
 
   return `
     <div class="px-4 pt-3 space-y-3.5">
-      <!-- 子分頁切換 -->
       <div class="grid grid-cols-3 gap-2 bg-white p-1.5 rounded-2xl border border-warmBorder shadow-sm">
         ${subTabs.map(st => {
           const active = uiState.bookingSubTab === st.id;
@@ -1466,14 +1578,12 @@ function renderBookingsTab(trip) {
         }).join('')}
       </div>
 
-      <!-- 快速新增按鈕 -->
       <button onclick="openModal('ITEM_FORM', { type: '${uiState.bookingSubTab === 'CAR' ? 'TRANSPORT' : uiState.bookingSubTab}' })"
         class="w-full py-3 rounded-2xl bg-white hover:bg-sageLight/50 text-charcoal font-bold text-xs border border-warmBorder shadow-sm flex items-center justify-center gap-1.5 transition">
         <i data-lucide="plus" class="w-4 h-4 text-sage"></i>
         <span>新增${uiState.bookingSubTab === 'FLIGHT' ? '機票' : uiState.bookingSubTab === 'HOTEL' ? '住宿' : '租車'}</span>
       </button>
 
-      <!-- 內容列表 -->
       ${uiState.bookingSubTab === 'FLIGHT' ? (
         flights.length === 0 ? renderEmptyBooking('plane', '尚未新增機票', '點擊上方按鈕新增第一筆機票資料') :
         `<div class="space-y-3">${flights.map(f => renderItineraryCard(trip, f, 0)).join('')}</div>`
@@ -1496,7 +1606,7 @@ function renderBookingsTab(trip) {
               <i data-lucide="map-pin" class="w-3.5 h-3.5 text-purple-600"></i>
               <span>${escapeHtml(h.location || '未填寫地址')}</span>
             </p>
-            ${h.notes ? `<div class="mt-2.5 bg-cream/70 rounded-xl p-2.5 text-xs text-stone-600 whitespace-pre-line">${escapeHtml(h.notes)}</div>` : ''}
+            ${h.notes ? `<div class="mt-2.5 bg-cream/70 rounded-xl p-2.5 text-xs text-stone-600 whitespace-pre-line">${escapeHtml(h.notes.trim())}</div>` : ''}
           </div>
         `).join('')}</div>`
       ) : ''}
@@ -1520,7 +1630,7 @@ function renderEmptyBooking(icon, title, subtitle) {
 
 /**
  * ============================================================================
- * TAB 3: 記帳與分帳 (Expenses & Pool)
+ * TAB 3: 記帳與分帳 (含均分/非均分 + 外幣現金餘額追蹤 + 公費管理)
  * ============================================================================
  */
 function renderExpensesTab(trip) {
@@ -1532,16 +1642,22 @@ function renderExpensesTab(trip) {
 
   return `
     <div class="px-4 pt-3 space-y-3.5">
-      <!-- 分帳總覽 / 公費管理 切換 -->
-      <div class="grid grid-cols-2 gap-2 bg-white p-1.5 rounded-2xl border border-warmBorder shadow-sm">
+      <!-- 分帳總覽 / 外幣現金袋 / 公費管理 切換 -->
+      <div class="grid grid-cols-3 gap-1.5 bg-white p-1.5 rounded-2xl border border-warmBorder shadow-sm">
         <button onclick="setExpenseSubTab('SPLIT')"
-          class="py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition
+          class="py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition
           ${uiState.expenseSubTab === 'SPLIT' ? 'bg-charcoal text-white shadow-sm' : 'text-stone-600 hover:bg-cream'}">
           <i data-lucide="receipt" class="w-3.5 h-3.5"></i>
           <span>分帳總覽</span>
         </button>
+        <button onclick="setExpenseSubTab('CASH')"
+          class="py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition
+          ${uiState.expenseSubTab === 'CASH' ? 'bg-charcoal text-white shadow-sm' : 'text-stone-600 hover:bg-cream'}">
+          <i data-lucide="banknote" class="w-3.5 h-3.5"></i>
+          <span>外幣現金</span>
+        </button>
         <button onclick="setExpenseSubTab('POOL')"
-          class="py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition
+          class="py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition
           ${uiState.expenseSubTab === 'POOL' ? 'bg-charcoal text-white shadow-sm' : 'text-stone-600 hover:bg-cream'}">
           <i data-lucide="piggy-bank" class="w-3.5 h-3.5"></i>
           <span>公費管理</span>
@@ -1549,9 +1665,8 @@ function renderExpensesTab(trip) {
       </div>
 
       ${uiState.expenseSubTab === 'SPLIT' ? `
-        <!-- 操作按鈕列 -->
         <div class="grid grid-cols-2 gap-2.5">
-          <button onclick="openModal('ADD_EXPENSE')"
+          <button onclick="openAddExpenseModal()"
             class="py-3 rounded-2xl bg-sage hover:bg-sageDark text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition">
             <i data-lucide="plus-circle" class="w-4 h-4"></i>
             <span>新增支出</span>
@@ -1563,7 +1678,6 @@ function renderExpensesTab(trip) {
           </button>
         </div>
 
-        <!-- 成員篩選膠囊 -->
         <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
           <button onclick="setExpenseFilterMember('ALL')"
             class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition
@@ -1580,7 +1694,6 @@ function renderExpensesTab(trip) {
           `).join('')}
         </div>
 
-        <!-- 綠色總支出卡片 -->
         <div class="bg-gradient-to-br from-[#5B7A58] to-[#466343] rounded-3xl p-5 text-white shadow-md">
           <div class="text-xs font-medium text-white/80">分帳總支出 (TWD)</div>
           <div class="text-3xl font-black tracking-tight mt-1">
@@ -1592,39 +1705,107 @@ function renderExpensesTab(trip) {
           </div>
         </div>
 
-        <!-- 支出明細列表 -->
         <div class="space-y-2.5">
           <h3 class="text-xs font-bold text-stone-500 px-1">支出明細</h3>
           ${filteredExpenses.length === 0 ? `
             <div class="bg-white rounded-3xl p-8 text-center border border-warmBorder text-xs text-stone-400">
-              尚無分帳支出紀錄，點擊上方「新增支出」開始記帳
+              尚無分帳支出紀錄，可點擊「新增支出」或從行程卡片點「+記帳」直接帶入
             </div>
           ` : filteredExpenses.map(exp => {
             const payer = trip.members.find(m => m.id === exp.payerId);
             const twd = convertToTWD(exp.extraFee ? exp.amount * 1.015 : exp.amount, exp.currency, trip.rates);
+            const isCustom = exp.splitMode === 'CUSTOM';
             return `
               <div class="bg-white rounded-2xl p-3.5 border border-warmBorder shadow-sm flex items-center justify-between gap-3">
                 <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-1.5 mb-1">
+                  <div class="flex items-center gap-1.5 mb-1 flex-wrap">
                     <span class="text-[10px] font-bold bg-sageLight text-sageDark px-2 py-0.5 rounded-full">${escapeHtml(exp.category)}</span>
+                    ${isCustom ? `<span class="text-[10px] font-bold bg-terracottaLight text-terracotta px-2 py-0.5 rounded-full">自訂非均分</span>` : ''}
                     <span class="text-[10px] text-stone-400">${exp.date} · ${escapeHtml(exp.method)}</span>
                   </div>
                   <div class="text-sm font-extrabold text-charcoal truncate">${escapeHtml(exp.title)}</div>
                   <div class="text-[11px] text-stone-500 mt-0.5">
-                    由 <b>${payer ? `${payer.avatar} ${escapeHtml(payer.name)}` : '成員'}</b> 先付 · ${(exp.splitMemberIds || []).length}人平分
+                    由 <b>${payer ? `${payer.avatar} ${escapeHtml(payer.name)}` : '成員'}</b> 先付 · ${isCustom ? '依自訂金額分攤' : `${(exp.splitMemberIds || []).length}人平分`}
                   </div>
                 </div>
                 <div class="text-right shrink-0">
                   <div class="text-sm font-black text-charcoal">NT$ ${twd.toLocaleString()}</div>
-                  ${exp.currency !== 'TWD' ? `<div class="text-[10px] text-stone-400">${exp.currency} ${exp.amount}</div>` : ''}
+                  ${exp.currency !== 'TWD' ? `<div class="text-[10px] text-stone-400">${exp.currency} ${Number(exp.amount).toLocaleString()}</div>` : ''}
                   <button onclick="deleteExpense('${exp.id}')" class="text-[10px] text-red-400 hover:text-red-600 mt-1">刪除</button>
                 </div>
               </div>
             `;
           }).join('')}
         </div>
-      ` : `
-        <!-- 公費管理視圖 -->
+      ` : ''}
+
+      ${uiState.expenseSubTab === 'CASH' ? `
+        <!-- 外幣現金餘額追蹤視圖 -->
+        <button onclick="openModal('ADD_CASH_EXCHANGE')"
+          class="w-full py-3 rounded-2xl bg-sage hover:bg-sageDark text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="plus-circle" class="w-4 h-4"></i>
+          <span>登記換匯 / 外幣現鈔</span>
+        </button>
+
+        <div class="space-y-3">
+          ${Object.keys(fin.cashSummary).length === 0 ? `
+            <div class="bg-white rounded-3xl p-8 text-center border border-warmBorder text-xs text-stone-400">
+              尚未登記任何外幣現鈔！登記後，只要記帳選擇「現金支付」，就會自動幫你扣掉外幣現金餘額。
+            </div>
+          ` : Object.entries(fin.cashSummary).map(([cur, info]) => {
+            const pct = info.boughtForeign > 0 ? Math.max(0, Math.min(100, Math.round((info.remainingForeign / info.boughtForeign) * 100))) : 0;
+            const avgRate = info.boughtForeign > 0 ? (info.boughtTWD / info.boughtForeign).toFixed(4) : '-';
+            return `
+              <div class="bg-white rounded-3xl p-4 border border-warmBorder shadow-sm space-y-3">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <span class="text-xs font-extrabold bg-sageLight text-sageDark px-2.5 py-0.5 rounded-full">${cur} 現金袋</span>
+                    <div class="text-2xl font-black text-charcoal mt-1.5">
+                      ${cur} ${info.remainingForeign.toLocaleString()}
+                    </div>
+                  </div>
+                  <div class="text-right text-[11px] text-stone-500">
+                    <div>平均換匯率：<b>${avgRate}</b></div>
+                    <div class="mt-0.5">約合 NT$ ${convertToTWD(info.remainingForeign, cur, trip.rates).toLocaleString()}</div>
+                  </div>
+                </div>
+
+                <div class="w-full h-2.5 bg-cream rounded-full overflow-hidden">
+                  <div class="h-full bg-sage rounded-full transition-all" style="width: ${pct}%"></div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 pt-1 text-xs">
+                  <div class="bg-cream/80 rounded-xl p-2.5">
+                    <div class="text-[10px] text-stone-400">總換入外幣</div>
+                    <div class="font-extrabold text-charcoal mt-0.5">${cur} ${info.boughtForeign.toLocaleString()}</div>
+                  </div>
+                  <div class="bg-terracottaLight/70 rounded-xl p-2.5">
+                    <div class="text-[10px] text-terracotta">已花費現金</div>
+                    <div class="font-extrabold text-terracotta mt-0.5">- ${cur} ${info.spentForeign.toLocaleString()}</div>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        <div class="space-y-2">
+          <h3 class="text-xs font-bold text-stone-500 px-1">換匯登記紀錄</h3>
+          ${(trip.cashExchanges || []).map(ex => `
+            <div class="bg-white rounded-2xl p-3.5 border border-warmBorder flex items-center justify-between text-xs">
+              <div>
+                <div class="font-extrabold text-charcoal">+ ${ex.currency} ${Number(ex.foreignAmount).toLocaleString()}</div>
+                <div class="text-[11px] text-stone-400 mt-0.5">${ex.date} · ${escapeHtml(ex.note || '外幣現鈔')} (花費 NT$${Number(ex.twdCost).toLocaleString()})</div>
+              </div>
+              <button onclick="deleteCashExchange('${ex.id}')" class="text-stone-300 hover:text-red-500">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      ${uiState.expenseSubTab === 'POOL' ? `
         <div class="bg-gradient-to-br from-[#2B7A69] to-[#1F5C4E] rounded-3xl p-5 text-white shadow-md">
           <div class="text-xs font-medium text-white/80">公費總額概算 (TWD)</div>
           <div class="text-3xl font-black tracking-tight mt-1">
@@ -1668,7 +1849,7 @@ function renderExpensesTab(trip) {
             </div>
           `).join('')}
         </div>
-      `}
+      ` : ''}
     </div>
   `;
 }
@@ -1734,7 +1915,6 @@ function renderJournalTab(trip) {
                 class="w-full h-52 object-cover rounded-2xl cursor-zoom-in border border-warmBorder" />
             ` : ''}
 
-            <!-- 成員切換與留言區 -->
             <div class="pt-3 border-t border-warmBorder space-y-2.5">
               ${(j.comments || []).map(c => {
                 const cm = trip.members.find(m => m.id === c.memberId);
@@ -1752,7 +1932,6 @@ function renderJournalTab(trip) {
                 `;
               }).join('')}
 
-              <!-- 選擇發言身份 -->
               <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
                 ${trip.members.map(m => `
                   <button onclick="setJournalAuthor('${m.id}')"
@@ -1782,7 +1961,7 @@ function renderJournalTab(trip) {
 
 /**
  * ============================================================================
- * TAB 5: 清單 (待辦 / 行李 / 想去口袋名單 / 文件)
+ * TAB 5: 清單 (待辦 / 行李 / 想去口袋名單一鍵排入行程 / 文件)
  * ============================================================================
  */
 function renderListsTab(trip) {
@@ -1795,7 +1974,6 @@ function renderListsTab(trip) {
 
   return `
     <div class="px-4 pt-3 space-y-3.5">
-      <!-- 4個子分頁 -->
       <div class="grid grid-cols-4 gap-1.5 bg-white p-1.5 rounded-2xl border border-warmBorder shadow-sm">
         ${subTabs.map(st => {
           const active = uiState.listSubTab === st.id;
@@ -1818,13 +1996,11 @@ function renderListsTab(trip) {
   `;
 }
 
-// 5-1 待辦事項視圖
 function renderTodoSubView(trip) {
   const activeAuthor = trip.members.find(m => m.id === uiState.activeJournalAuthorId) || trip.members[0];
 
   return `
     <div class="space-y-3">
-      <!-- 新增待辦輸入框 -->
       <form onsubmit="addTodoItem(event)" class="bg-white rounded-2xl p-2.5 border border-warmBorder shadow-sm flex items-center gap-2">
         <input type="text" id="new_todo_input" placeholder="新增待辦事項 (全體)..."
           class="flex-1 bg-transparent px-2 py-1.5 text-xs focus:outline-none" />
@@ -1854,7 +2030,6 @@ function renderTodoSubView(trip) {
               </button>
             </div>
 
-            <!-- 成員完成度切換按鈕 -->
             <div class="flex flex-wrap gap-1.5">
               ${trip.members.map(m => {
                 const isDone = (todo.completedBy || []).includes(m.id);
@@ -1869,7 +2044,6 @@ function renderTodoSubView(trip) {
               }).join('')}
             </div>
 
-            <!-- 留言進度討論 -->
             ${(todo.comments || []).length > 0 ? `
               <div class="space-y-1.5 pt-2 border-t border-warmBorder/60">
                 ${todo.comments.map(c => {
@@ -1899,7 +2073,6 @@ function renderTodoSubView(trip) {
   `;
 }
 
-// 5-2 行李打包清單視圖
 function renderPackingSubView(trip) {
   const memberId = uiState.packingMemberId || trip.members[0]?.id;
   const activeMember = trip.members.find(m => m.id === memberId) || trip.members[0];
@@ -1911,7 +2084,6 @@ function renderPackingSubView(trip) {
 
   return `
     <div class="space-y-3">
-      <!-- 成員切換卡片 -->
       <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
         ${trip.members.map(m => {
           const mItems = (trip.packing && trip.packing[m.id]) || [];
@@ -1933,7 +2105,6 @@ function renderPackingSubView(trip) {
         }).join('')}
       </div>
 
-      <!-- 總打包進度卡 -->
       <div class="bg-white rounded-3xl p-4 border border-warmBorder shadow-sm">
         <div class="flex items-center justify-between mb-2">
           <div>
@@ -1947,7 +2118,6 @@ function renderPackingSubView(trip) {
         </div>
       </div>
 
-      <!-- 各分類行李清單 -->
       ${categories.map(cat => {
         const catItems = items.filter(i => i.category === cat);
         const catDone = catItems.filter(i => i.packed).length;
@@ -1983,7 +2153,6 @@ function renderPackingSubView(trip) {
               `).join('')}
             </div>
 
-            <!-- 快速新增單品 -->
             <form onsubmit="addPackingItem(event, '${memberId}', '${cat}')" class="flex items-center gap-2 pt-1">
               <input type="text" id="pk_input_${cat}" placeholder="+ 新增${cat}項目..."
                 class="flex-1 bg-cream rounded-xl px-3 py-1.5 text-xs border border-warmBorder focus:outline-none focus:border-sage" />
@@ -1998,7 +2167,7 @@ function renderPackingSubView(trip) {
   `;
 }
 
-// 5-3 想去口袋名單筆記視圖
+// 5-3 想去口袋名單筆記視圖 (含一鍵排入第 X 天行程)
 function renderPocketSubView(trip) {
   const list = trip.pocketList || [];
   const filtered = list.filter(item => {
@@ -2025,7 +2194,6 @@ function renderPocketSubView(trip) {
           </button>
         </div>
 
-        <!-- 搜尋框 -->
         <div class="relative">
           <i data-lucide="search" class="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
           <input type="text" value="${escapeHtml(uiState.pocketSearch)}"
@@ -2034,7 +2202,6 @@ function renderPocketSubView(trip) {
             class="w-full bg-cream rounded-2xl pl-9 pr-4 py-2 text-xs border border-warmBorder focus:outline-none focus:border-sage" />
         </div>
 
-        <!-- 分類篩選 -->
         <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
           ${['ALL', '美食', '探索景點', '購物/伴手禮'].map(t => `
             <button onclick="setPocketTypeFilter('${t}')"
@@ -2046,7 +2213,6 @@ function renderPocketSubView(trip) {
         </div>
       </div>
 
-      <!-- 口袋名單卡片列表 -->
       <div class="space-y-3">
         ${filtered.length === 0 ? `
           <div class="bg-white rounded-3xl p-10 text-center border border-warmBorder text-xs text-stone-400">
@@ -2059,7 +2225,7 @@ function renderPocketSubView(trip) {
                 <div class="flex items-center gap-1.5 flex-wrap mb-1">
                   <span class="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">${escapeHtml(item.type)}</span>
                   ${item.tag ? `<span class="text-[10px] font-bold bg-sageLight text-sageDark px-2 py-0.5 rounded-full">${escapeHtml(item.tag)}</span>` : ''}
-                  <span class="text-[11px] font-bold text-amber-500">★ ${item.rating || '5.0'}</span>
+                  ${item.scheduledDay ? `<span class="text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full">已排入 Day ${item.scheduledDay}</span>` : ''}
                 </div>
                 <h4 class="text-sm font-extrabold text-charcoal">${escapeHtml(item.title)}</h4>
               </div>
@@ -2074,18 +2240,19 @@ function renderPocketSubView(trip) {
               <p class="text-xs text-stone-600 leading-relaxed bg-cream/70 p-2.5 rounded-2xl">${escapeHtml(item.notes)}</p>
             ` : ''}
 
-            ${item.images && item.images.length > 0 ? `
-              <div class="grid grid-cols-3 gap-2">
-                ${item.images.map((img, i) => `
-                  <img src="${img}" onclick="openLightbox(${JSON.stringify(item.images).replace(/"/g, '&quot;')}, ${i})"
-                    class="w-full h-20 object-cover rounded-xl cursor-zoom-in border border-warmBorder" />
-                `).join('')}
+            <!-- 一鍵排入第 X 天行程列 -->
+            <div class="flex items-center justify-between pt-2 border-t border-warmBorder/60 gap-2">
+              <div class="flex items-center gap-1.5">
+                <select onchange="if(this.value !== '') schedulePocketToDay('${item.id}', Number(this.value))"
+                  class="bg-sageLight text-sageDark font-extrabold text-[11px] px-2.5 py-1.5 rounded-xl border border-sage/30 focus:outline-none cursor-pointer">
+                  <option value="">📅 一鍵排入行程...</option>
+                  ${trip.days.map((d, dIdx) => `
+                    <option value="${dIdx}">排入 Day ${dIdx + 1} (${formatDateParts(d.date).md})</option>
+                  `).join('')}
+                </select>
               </div>
-            ` : ''}
 
-            <div class="flex items-center justify-between pt-1 text-xs">
-              <span class="text-stone-400 text-[11px]">${escapeHtml(item.priceRange || '')}</span>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2.5 text-xs">
                 ${item.mapUrl ? `
                   <a href="${escapeHtml(item.mapUrl)}" target="_blank"
                     class="inline-flex items-center gap-1 text-sage font-bold hover:underline">
@@ -2105,7 +2272,6 @@ function renderPocketSubView(trip) {
   `;
 }
 
-// 5-4 入境資料與文件視圖
 function renderDocsSubView(trip) {
   const docs = (trip.documents || []).filter(d => uiState.docCategoryFilter === 'ALL' || d.category === uiState.docCategoryFilter);
   const cats = ['ALL', '入境資料', '簽證', '保險', '訂單'];
@@ -2212,10 +2378,10 @@ function renderModalLayer(trip) {
 
   let content = '';
 
-  // 1. 首頁 / 行程切換器
+  // 1. 首頁 / 行程切換器 (含套用範本與匯入 JSON)
   if (type === 'HOME_SWITCHER') {
     content = `
-      <div class="p-5 space-y-4">
+      <div class="p-5 space-y-4 max-h-[85vh] overflow-y-auto">
         <div class="flex items-center justify-between">
           <div>
             <h2 class="text-xl font-black text-charcoal">我的旅遊手帳</h2>
@@ -2226,13 +2392,19 @@ function renderModalLayer(trip) {
           </button>
         </div>
 
-        <button onclick="openModal('CREATE_NEW_TRIP')"
-          class="w-full py-4 rounded-3xl bg-sage hover:bg-sageDark text-white font-extrabold text-sm shadow-md flex items-center justify-center gap-2 transition">
-          <i data-lucide="plus" class="w-5 h-5"></i>
-          <span>建立新行程</span>
-        </button>
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="openModal('CREATE_NEW_TRIP')"
+            class="py-3.5 rounded-2xl bg-sage hover:bg-sageDark text-white font-extrabold text-xs shadow-md flex items-center justify-center gap-1.5 transition">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            <span>建立空白行程</span>
+          </button>
+          <button onclick="triggerImportJson()"
+            class="py-3.5 rounded-2xl bg-white hover:bg-cream text-charcoal font-extrabold text-xs border border-warmBorder flex items-center justify-center gap-1.5 transition">
+            <i data-lucide="upload" class="w-4 h-4 text-sage"></i>
+            <span>匯入 JSON 檔</span>
+          </button>
+        </div>
 
-        <!-- 輸入行程碼加入 -->
         <form onsubmit="joinTripByCode(event)" class="flex items-center gap-2">
           <input type="text" id="trip_code_input" placeholder="輸入行程碼 (如 HIJ319)..."
             class="flex-1 bg-white rounded-2xl px-4 py-3 text-xs border border-warmBorder focus:outline-none focus:border-sage uppercase" />
@@ -2241,29 +2413,66 @@ function renderModalLayer(trip) {
           </button>
         </form>
 
-        <div class="space-y-2">
+        <div class="space-y-2.5">
           <div class="text-xs font-bold text-stone-500">我的收藏行程與範本</div>
           ${appState.trips.map(t => `
-            <div onclick="selectTrip('${t.id}')"
-              class="bg-white rounded-2xl p-3.5 border ${t.id === trip.id ? 'border-sage ring-2 ring-sage/20' : 'border-warmBorder'} flex items-center justify-between cursor-pointer hover:bg-cream/40 transition">
-              <div class="flex items-center gap-3 min-w-0">
-                <div class="w-10 h-10 rounded-xl bg-sageLight text-sage flex items-center justify-center shrink-0">
-                  <i data-lucide="plane" class="w-5 h-5"></i>
+            <div class="bg-white rounded-2xl p-3.5 border ${trip && t.id === trip.id ? 'border-sage ring-2 ring-sage/20' : 'border-warmBorder'} space-y-2">
+              <div onclick="selectTrip('${t.id}')" class="flex items-center justify-between cursor-pointer">
+                <div class="flex items-center gap-3 min-w-0">
+                  <div class="w-10 h-10 rounded-xl bg-sageLight text-sage flex items-center justify-center shrink-0">
+                    <i data-lucide="plane" class="w-5 h-5"></i>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-sm font-extrabold text-charcoal truncate">${escapeHtml(t.title)}</div>
+                    <div class="text-[11px] font-mono text-stone-400 mt-0.5">Code: ${t.code} · ${t.days.length} 天</div>
+                  </div>
                 </div>
-                <div class="min-w-0">
-                  <div class="text-sm font-extrabold text-charcoal truncate">${escapeHtml(t.title)}</div>
-                  <div class="text-[11px] font-mono text-stone-400 mt-0.5">Code: ${t.code} · ${t.days.length} 天</div>
-                </div>
+                ${appState.trips.length > 1 ? `
+                  <button onclick="event.stopPropagation(); deleteTrip('${t.id}')" class="text-stone-300 hover:text-red-500 p-1.5">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                  </button>
+                ` : ''}
               </div>
-              ${appState.trips.length > 1 ? `
-                <button onclick="event.stopPropagation(); deleteTrip('${t.id}')" class="text-stone-300 hover:text-red-500 p-1.5">
-                  <i data-lucide="trash-2" class="w-4 h-4"></i>
-                </button>
-              ` : ''}
+              <div class="flex items-center gap-2 pt-1">
+                <button onclick="selectTrip('${t.id}')" class="flex-1 py-1.5 rounded-xl bg-cream text-charcoal text-[11px] font-bold">開啟查看</button>
+                <button onclick="openModal('CLONE_TEMPLATE_MODAL', '${t.id}')" class="flex-1 py-1.5 rounded-xl bg-sageLight text-sageDark text-[11px] font-extrabold">✨ 套用為新行程</button>
+              </div>
             </div>
           `).join('')}
         </div>
       </div>
+    `;
+  }
+
+  // 1B. 一鍵套用範本並自動平移日期 Modal
+  else if (type === 'CLONE_TEMPLATE_MODAL') {
+    const srcTrip = appState.trips.find(t => t.id === payload) || appState.trips[0];
+    const defaultStart = srcTrip?.days?.[0]?.date || '2027-03-19';
+    content = `
+      <form onsubmit="submitCloneTemplate(event, '${srcTrip.id}')" class="p-5 space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-extrabold text-charcoal">✨ 套用範本建立新行程</h3>
+          <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <p class="text-xs text-stone-500 bg-white p-3 rounded-2xl border border-warmBorder">
+          將複製「<b>${escapeHtml(srcTrip.title)}</b>」的全部 ${srcTrip.days.length} 天行程與明細，並自動依你的新出發日期平移每一天的日期！
+        </p>
+        <div>
+          <label class="block text-xs font-bold text-stone-600 mb-1">新行程名稱 *</label>
+          <input type="text" name="title" required value="${escapeHtml(srcTrip.title.replace('範本', '我的行程'))}"
+            class="w-full bg-white rounded-2xl px-4 py-3 text-xs border border-warmBorder focus:outline-none focus:border-sage" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-stone-600 mb-1">新的出發日期 (Day 1)</label>
+          <input type="date" name="newStartDate" required value="${defaultStart}"
+            class="w-full bg-white rounded-2xl px-3.5 py-2.5 text-xs border border-warmBorder" />
+        </div>
+        <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage hover:bg-sageDark text-white font-extrabold text-xs shadow-md">
+          立即建立並平移日期
+        </button>
+      </form>
     `;
   }
 
@@ -2301,7 +2510,7 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 3. 選擇項目類型 (5大規劃功能)
+  // 3. 選擇項目類型
   else if (type === 'ADD_TYPE_SELECTOR') {
     const cards = [
       { id: 'SPOT', label: '景點', icon: 'camera', bg: 'bg-emerald-50', color: 'text-emerald-600' },
@@ -2320,7 +2529,7 @@ function renderModalLayer(trip) {
         </div>
         <div class="grid grid-cols-2 gap-3">
           ${cards.map(c => `
-            <button onclick="openModal('ITEM_FORM', { type: '${c.id}' })"
+            <button onclick="openItemFormModal('${c.id}', null)"
               class="bg-white hover:bg-cream/60 rounded-3xl p-5 border border-warmBorder shadow-sm flex flex-col items-center justify-center gap-2.5 active:scale-95 transition">
               <div class="w-12 h-12 rounded-2xl ${c.bg} ${c.color} flex items-center justify-center">
                 <i data-lucide="${c.icon}" class="w-6 h-6"></i>
@@ -2336,7 +2545,7 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 4. 新增 / 編輯行程項目表單 (支援航班、交通、圖片位置、潛在花費、分攤成員)
+  // 4. 新增 / 編輯行程項目表單 (含跨日+1標記、票券天數、多段轉乘動態編輯、卡片間移動提示)
   else if (type === 'ITEM_FORM' || type === 'EDIT_ITEM') {
     const existingItem = type === 'EDIT_ITEM'
       ? trip.days.flatMap(d => d.items).find(i => i.id === payload)
@@ -2371,16 +2580,30 @@ function renderModalLayer(trip) {
           </div>
         </div>
 
-        <div>
-          <label class="block text-[11px] font-bold text-stone-500 mb-1">地點 / 地址</label>
-          <input type="text" name="location" value="${escapeHtml(existingItem?.location || '')}"
-            placeholder="輸入地址或地標名稱 (可一鍵開啟地圖)"
-            class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+        <div class="grid grid-cols-1 gap-2">
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 mb-1">地點 / 地址</label>
+            <input type="text" name="location" value="${escapeHtml(existingItem?.location || '')}"
+              placeholder="輸入地址或地標名稱 (可一鍵開啟地圖)"
+              class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 mb-1">前往下一站移動提示 (選填)</label>
+            <input type="text" name="transitHint" value="${escapeHtml(existingItem?.transitHint || '')}"
+              placeholder="例如：步行約 8 分鐘 / 搭地鐵御堂筋線約 15 分鐘"
+              class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+          </div>
         </div>
 
         ${itemType === 'FLIGHT' ? `
           <div class="bg-white rounded-2xl p-3 border border-warmBorder space-y-2.5">
-            <div class="text-xs font-extrabold text-teal-700">✈️ 航班詳細資訊</div>
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-extrabold text-teal-700">✈️ 航班詳細資訊</span>
+              <label class="inline-flex items-center gap-1 text-xs font-bold text-red-600 cursor-pointer">
+                <input type="checkbox" name="isNextDay" ${existingItem?.isNextDay ? 'checked' : ''} class="accent-red-500" />
+                <span>隔日抵達 (+1 天)</span>
+              </label>
+            </div>
             <div class="grid grid-cols-2 gap-2">
               <input type="text" name="airline" value="${escapeHtml(existingItem?.airline || '')}" placeholder="航空公司 (例: 中華航空)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
               <input type="text" name="flightNo" value="${escapeHtml(existingItem?.flightNo || '')}" placeholder="航班代號 (例: CI112)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
@@ -2407,18 +2630,38 @@ function renderModalLayer(trip) {
 
         ${itemType === 'TRANSPORT' ? `
           <div class="bg-white rounded-2xl p-3 border border-warmBorder space-y-2.5">
-            <div class="text-xs font-extrabold text-sky-700">🚆 交通路線與票券</div>
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-extrabold text-sky-700">🚆 交通路線與票券提醒</span>
+              <label class="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 cursor-pointer">
+                <input type="checkbox" name="isNextDay" ${existingItem?.isNextDay ? 'checked' : ''} class="accent-red-500" />
+                <span>跨日抵達 (+1)</span>
+              </label>
+            </div>
             <div class="grid grid-cols-2 gap-2">
               <input type="text" name="transportMode" value="${escapeHtml(existingItem?.transportMode || '電車 ・ 約 30 分鐘')}" placeholder="交通方式" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-              <input type="text" name="passTag" value="${escapeHtml(existingItem?.passTag || '')}" placeholder="票券標籤 (如 JR周遊券)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="arrTime" value="${escapeHtml(existingItem?.arrTime || '')}" placeholder="預計抵達時間 (如 10:30)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
             </div>
             <div class="grid grid-cols-2 gap-2">
               <input type="text" name="depStation" value="${escapeHtml(existingItem?.depStation || '')}" placeholder="出發站名" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
               <input type="text" name="arrStation" value="${escapeHtml(existingItem?.arrStation || '')}" placeholder="抵達站名" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
             </div>
             <div class="grid grid-cols-2 gap-2">
-              <input type="text" name="viaStation" value="${escapeHtml(existingItem?.viaStation || '')}" placeholder="轉乘/經由站" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-              <input type="text" name="arrTime" value="${escapeHtml(existingItem?.arrTime || '')}" placeholder="預計抵達時間 (如 10:30)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="passTag" value="${escapeHtml(existingItem?.passTag || '')}" placeholder="票券名稱 (如 JR關西廣島券)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+              <input type="text" name="passDayInfo" value="${escapeHtml(existingItem?.passDayInfo || '')}" placeholder="啟用天數 (如 Day 2 / 共 5 天)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+            </div>
+
+            <!-- 多段轉乘明細編輯器 -->
+            <div class="pt-2 border-t border-warmBorder space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-extrabold text-charcoal">🔄 多段轉乘明細 (${uiState.tempSegments.length} 段)</span>
+                <button type="button" onclick="addTempSegment()"
+                  class="text-[11px] font-bold bg-sageLight text-sageDark px-2.5 py-1 rounded-full">
+                  + 新增轉乘段
+                </button>
+              </div>
+              <div id="segments_editor_container" class="space-y-2">
+                ${renderSegmentsEditorHtml()}
+              </div>
             </div>
           </div>
         ` : ''}
@@ -2557,10 +2800,6 @@ function renderModalLayer(trip) {
             </div>
           </div>
         </div>
-
-        <p class="text-[11px] text-amber-700 bg-amber-50 p-2.5 rounded-xl">
-          💡 提示：對調後，兩天內的所有行程項目與地點將互換，原本的日期標籤與順序不受影響。
-        </p>
 
         <div class="grid grid-cols-2 gap-2.5">
           <button onclick="cancelSwapDays()" class="py-3 rounded-2xl bg-white border border-warmBorder text-xs font-bold text-stone-600">取消</button>
@@ -2743,7 +2982,7 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 10. 行程設定與匯出 PDF
+  // 10. 行程設定、JSON 匯出/匯入備份與匯出 PDF
   else if (type === 'SETTINGS') {
     const rates = trip.rates || DEFAULT_RATES;
     content = `
@@ -2751,23 +2990,32 @@ function renderModalLayer(trip) {
         <div class="flex items-center justify-between">
           <h3 class="text-base font-extrabold text-charcoal flex items-center gap-1.5">
             <i data-lucide="settings" class="w-4 h-4 text-sage"></i>
-            <span>行程設定</span>
+            <span>行程設定與備份</span>
           </h3>
           <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
 
-        <!-- 行程代碼 -->
-        <div class="bg-white rounded-2xl p-3.5 border border-warmBorder flex items-center justify-between">
-          <div>
-            <div class="text-[10px] font-bold text-stone-400"># 行程專屬代碼 (TRIP CODE)</div>
-            <div class="text-lg font-black font-mono text-charcoal tracking-wider mt-0.5">${trip.code}</div>
+        <!-- JSON 完整備份與還原 (防資料遺失 & 傳給旅伴協作) -->
+        <div class="bg-white rounded-2xl p-3.5 border border-warmBorder space-y-2.5">
+          <div class="text-xs font-extrabold text-charcoal flex items-center gap-1.5">
+            <i data-lucide="database" class="w-4 h-4 text-sage"></i>
+            <span>跨裝置備份 / 傳給旅伴編輯 (JSON)</span>
           </div>
-          <button onclick="copyText('${trip.code}', '已複製行程代碼！')"
-            class="px-3 py-1.5 rounded-xl bg-sageLight text-sageDark text-xs font-bold">
-            複製代碼
-          </button>
+          <p class="text-[11px] text-stone-400">可將完整行程、記帳與照片匯出成 JSON 檔傳給旅伴或換手機時匯入。</p>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="exportTripJson()"
+              class="py-2.5 rounded-xl bg-sage hover:bg-sageDark text-white text-xs font-bold flex items-center justify-center gap-1">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span>匯出 JSON 檔</span>
+            </button>
+            <button onclick="triggerImportJson()"
+              class="py-2.5 rounded-xl bg-cream hover:bg-creamDark text-charcoal text-xs font-bold border border-warmBorder flex items-center justify-center gap-1">
+              <i data-lucide="upload" class="w-3.5 h-3.5 text-sage"></i>
+              <span>匯入 JSON 檔</span>
+            </button>
+          </div>
         </div>
 
         <!-- 匯出 PDF 手帳 -->
@@ -2782,7 +3030,7 @@ function renderModalLayer(trip) {
               預覽手冊版型
             </button>
             <button onclick="openModal('PDF_PREVIEW')"
-              class="py-2.5 rounded-xl bg-sage hover:bg-sageDark text-white text-xs font-bold">
+              class="py-2.5 rounded-xl bg-charcoal text-white text-xs font-bold">
               轉為 PDF 檔案
             </button>
           </div>
@@ -2815,15 +3063,14 @@ function renderModalLayer(trip) {
           </form>
         </div>
 
-        <!-- 備份與重置 -->
         <div class="grid grid-cols-2 gap-2">
-          <button onclick="duplicateCurrentTrip()"
+          <button onclick="openModal('CLONE_TEMPLATE_MODAL', '${trip.id}')"
             class="py-3 rounded-2xl bg-white border border-warmBorder text-xs font-bold text-charcoal">
-            📋 建立行程副本
+            ✨ 套用建立新行程
           </button>
           <button onclick="resetAllDemoData()"
             class="py-3 rounded-2xl bg-red-50 border border-red-200 text-xs font-bold text-red-600">
-            🔄 重置示範資料
+            🔄 重置全部資料
           </button>
         </div>
       </div>
@@ -2871,7 +3118,7 @@ function renderModalLayer(trip) {
                       <span>${escapeHtml(it.title)}</span>
                     </div>
                     ${it.location ? `<div class="text-[11px] text-stone-400">📍 ${escapeHtml(it.location)}</div>` : ''}
-                    ${it.notes ? `<div class="text-[11px] text-stone-600 mt-0.5 whitespace-pre-line">${escapeHtml(it.notes)}</div>` : ''}
+                    ${it.notes ? `<div class="text-[11px] text-stone-600 mt-0.5 whitespace-pre-line">${escapeHtml(it.notes.trim())}</div>` : ''}
                   </div>
                 `).join('')}
               </div>
@@ -2882,9 +3129,10 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 12. 新增分帳支出 Modal
+  // 12. 新增分帳支出 Modal (支援「均分」與「自訂非均分金額」切換)
   else if (type === 'ADD_EXPENSE') {
     const categories = ['交通', '住宿', '餐飲', '景點', '購物', '其他'];
+    const isCustom = uiState.tempSplitMode === 'CUSTOM';
     content = `
       <form onsubmit="submitAddExpense(event)" class="p-5 space-y-3.5 max-h-[85vh] overflow-y-auto">
         <div class="flex items-center justify-between">
@@ -2903,7 +3151,7 @@ function renderModalLayer(trip) {
           <div>
             <label class="block text-[11px] font-bold text-stone-500 mb-1">支付方式</label>
             <select name="method" class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder font-bold">
-              <option value="現金支付">💵 現金支付</option>
+              <option value="現金支付">💵 現金支付 (自動扣外幣現金袋)</option>
               <option value="信用卡">💳 信用卡</option>
             </select>
           </div>
@@ -2911,8 +3159,8 @@ function renderModalLayer(trip) {
 
         <div class="grid grid-cols-3 gap-2">
           <div class="col-span-2">
-            <label class="block text-[11px] font-bold text-stone-500 mb-1">金額 *</label>
-            <input type="number" step="0.01" name="amount" required placeholder="0"
+            <label class="block text-[11px] font-bold text-stone-500 mb-1">總金額 *</label>
+            <input type="number" step="0.01" id="exp_total_amount" name="amount" required placeholder="0"
               class="w-full bg-white rounded-xl px-3 py-2.5 text-sm font-extrabold border border-warmBorder" />
           </div>
           <div>
@@ -2955,20 +3203,94 @@ function renderModalLayer(trip) {
           </select>
         </div>
 
-        <div>
-          <label class="block text-[11px] font-bold text-stone-500 mb-1">分攤成員</label>
-          <div class="flex flex-wrap gap-1.5">
-            ${trip.members.map(m => `
-              <label class="inline-flex items-center gap-1 bg-white px-2.5 py-1.5 rounded-full text-xs font-semibold border border-warmBorder cursor-pointer">
-                <input type="checkbox" name="splitMemberIds" value="${m.id}" checked class="accent-[#5B7A58]" />
-                <span>${m.avatar} ${escapeHtml(m.name)}</span>
-              </label>
-            `).join('')}
+        <!-- 分攤方式：均分 vs 自訂非均分 -->
+        <div class="bg-white rounded-2xl p-3 border border-warmBorder space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-extrabold text-charcoal">分攤方式</span>
+            <div class="flex items-center gap-1 bg-cream p-1 rounded-xl">
+              <button type="button" onclick="setTempSplitMode('EQUAL')"
+                class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${!isCustom ? 'bg-sage text-white' : 'text-stone-500'}">
+                人數均分
+              </button>
+              <button type="button" onclick="setTempSplitMode('CUSTOM')"
+                class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${isCustom ? 'bg-terracotta text-white' : 'text-stone-500'}">
+                自訂非均分
+              </button>
+            </div>
           </div>
+
+          ${!isCustom ? `
+            <div class="flex flex-wrap gap-1.5">
+              ${trip.members.map(m => `
+                <label class="inline-flex items-center gap-1 bg-cream px-2.5 py-1.5 rounded-full text-xs font-semibold border border-warmBorder cursor-pointer">
+                  <input type="checkbox" name="splitMemberIds" value="${m.id}" checked class="accent-[#5B7A58]" />
+                  <span>${m.avatar} ${escapeHtml(m.name)}</span>
+                </label>
+              `).join('')}
+            </div>
+          ` : `
+            <div class="space-y-2">
+              <p class="text-[11px] text-stone-400">請輸入每位成員各自應分攤的原幣金額（沒參與填 0）：</p>
+              ${trip.members.map(m => `
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-bold text-charcoal">${m.avatar} ${escapeHtml(m.name)}</span>
+                  <input type="number" step="0.01" name="customSplit_${m.id}" placeholder="0"
+                    class="w-32 bg-cream rounded-xl px-3 py-1.5 text-xs border border-warmBorder text-right font-mono" />
+                </div>
+              `).join('')}
+            </div>
+          `}
         </div>
 
         <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage text-white font-extrabold text-xs shadow-md">
           儲存支出紀錄
+        </button>
+      </form>
+    `;
+  }
+
+  // 12B. 新增換匯外幣現鈔 Modal
+  else if (type === 'ADD_CASH_EXCHANGE') {
+    content = `
+      <form onsubmit="submitAddCashExchange(event)" class="p-5 space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-extrabold text-charcoal">💵 登記換匯 / 外幣現鈔</h3>
+          <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 mb-1">日期</label>
+            <input type="date" name="date" value="${new Date().toISOString().slice(0, 10)}" required
+              class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 mb-1">外幣幣別</label>
+            <select name="currency" class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder font-bold">
+              ${Object.keys(trip.rates || DEFAULT_RATES).filter(c => c !== 'TWD').map(c => `<option value="${c}">${c}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 mb-1">換得外幣金額 *</label>
+            <input type="number" step="0.01" name="foreignAmount" required placeholder="例如：80000"
+              class="w-full bg-white rounded-xl px-3 py-2.5 text-xs font-extrabold border border-warmBorder" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 mb-1">花費台幣成本 (TWD)</label>
+            <input type="number" step="1" name="twdCost" required placeholder="例如：17200"
+              class="w-full bg-white rounded-xl px-3 py-2.5 text-xs font-extrabold border border-warmBorder" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-stone-500 mb-1">備註</label>
+          <input type="text" name="note" placeholder="例如：外幣ATM提領、線上結匯"
+            class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+        </div>
+        <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage text-white font-extrabold text-xs shadow-md">
+          加入外幣現金袋
         </button>
       </form>
     `;
@@ -3172,7 +3494,7 @@ function renderModalLayer(trip) {
           </div>
           <button onclick="cycleMemberAvatar('${member.id}')"
             class="text-[11px] font-bold bg-sageLight text-sageDark px-3 py-1 rounded-full">
-            ✨ 更換可愛人臉頭像
+            ✨ 更換可愛頭像
           </button>
         </div>
 
@@ -3267,9 +3589,35 @@ function renderModalLayer(trip) {
   `;
 }
 
-/**
- * 全螢幕圖片燈箱預覽
- */
+// 多段轉乘表單列渲染
+function renderSegmentsEditorHtml() {
+  if (!uiState.tempSegments || uiState.tempSegments.length === 0) {
+    return `<div class="text-[11px] text-stone-400 bg-cream/60 rounded-xl p-2.5 text-center">尚無分段轉乘明細，可點右上方「+ 新增轉乘段」</div>`;
+  }
+  return uiState.tempSegments.map((seg, idx) => `
+    <div class="bg-cream rounded-xl p-2.5 border border-warmBorder space-y-1.5 text-xs">
+      <div class="flex items-center justify-between">
+        <span class="font-bold text-sageDark">第 ${idx + 1} 段轉乘</span>
+        <button type="button" onclick="removeTempSegment(${idx})" class="text-[11px] text-red-500 font-bold">刪除</button>
+      </div>
+      <div class="grid grid-cols-2 gap-1.5">
+        <input type="text" value="${escapeHtml(seg.mode || '')}" oninput="updateTempSegment(${idx}, 'mode', this.value)"
+          placeholder="列車/路線 (例: JR山陽本線)" class="bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
+        <input type="text" value="${escapeHtml(seg.time || '')}" oninput="updateTempSegment(${idx}, 'time', this.value)"
+          placeholder="時間 (例: 11:30 - 11:57)" class="bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
+      </div>
+      <div class="grid grid-cols-2 gap-1.5">
+        <input type="text" value="${escapeHtml(seg.from || '')}" oninput="updateTempSegment(${idx}, 'from', this.value)"
+          placeholder="上車站與月台" class="bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
+        <input type="text" value="${escapeHtml(seg.to || '')}" oninput="updateTempSegment(${idx}, 'to', this.value)"
+          placeholder="下車站" class="bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
+      </div>
+      <input type="text" value="${escapeHtml(seg.note || '')}" oninput="updateTempSegment(${idx}, 'note', this.value)"
+        placeholder="轉乘停留時間 / 月台方向備註" class="w-full bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
+    </div>
+  `).join('');
+}
+
 function renderLightboxLayer() {
   if (!uiState.lightbox) return '';
   const { images, index } = uiState.lightbox;
@@ -3297,7 +3645,20 @@ function switchTab(tabId) {
 }
 
 function openModal(type, payload = null) {
+  if (type === 'EDIT_ITEM') {
+    const trip = getCurrentTrip();
+    const existingItem = trip?.days.flatMap(d => d.items).find(i => i.id === payload);
+    uiState.tempSegments = existingItem?.segments ? JSON.parse(JSON.stringify(existingItem.segments)) : [];
+  } else if (type === 'ITEM_FORM') {
+    uiState.tempSegments = [];
+  }
   uiState.modal = { type, payload };
+  render();
+}
+
+function openItemFormModal(itemType, existingId) {
+  uiState.tempSegments = [];
+  uiState.modal = { type: 'ITEM_FORM', payload: { type: itemType } };
   render();
 }
 
@@ -3314,6 +3675,187 @@ function openLightbox(images, index = 0) {
 function closeLightbox() {
   uiState.lightbox = null;
   render();
+}
+
+// 多段轉乘動態操作
+function addTempSegment() {
+  uiState.tempSegments.push({ mode: '', time: '', from: '', to: '', note: '' });
+  const container = document.getElementById('segments_editor_container');
+  if (container) container.innerHTML = renderSegmentsEditorHtml();
+}
+
+function removeTempSegment(idx) {
+  uiState.tempSegments.splice(idx, 1);
+  const container = document.getElementById('segments_editor_container');
+  if (container) container.innerHTML = renderSegmentsEditorHtml();
+}
+
+function updateTempSegment(idx, field, val) {
+  if (uiState.tempSegments[idx]) {
+    uiState.tempSegments[idx][field] = val;
+  }
+}
+
+// 依時間自動重排當日行程
+function sortDayItemsByTime() {
+  const trip = getCurrentTrip();
+  const day = trip.days[uiState.activeDayIndex];
+  if (!day) return;
+  day.items.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  saveState();
+  render();
+  showToast('已依時間先後順序重新排列！');
+}
+
+// 行程卡片一鍵轉入記帳
+function convertItemToExpense(itemId) {
+  const trip = getCurrentTrip();
+  let targetItem = null;
+  let targetDate = trip.days[uiState.activeDayIndex]?.date || new Date().toISOString().slice(0, 10);
+
+  trip.days.forEach(d => {
+    const found = d.items.find(i => i.id === itemId);
+    if (found) {
+      targetItem = found;
+      targetDate = d.date;
+    }
+  });
+
+  if (!targetItem) return;
+  const splitMembers = (targetItem.memberIds && targetItem.memberIds.length > 0)
+    ? targetItem.memberIds
+    : trip.members.map(m => m.id);
+  const totalAmount = (Number(targetItem.price) || 0) * Math.max(1, splitMembers.length);
+  const catMap = { FOOD: '餐飲', TRANSPORT: '交通', FLIGHT: '交通', HOTEL: '住宿', SPOT: '景點' };
+
+  trip.expenses = trip.expenses || [];
+  trip.expenses.unshift({
+    id: 'exp_' + Date.now(),
+    date: targetDate,
+    time: targetItem.time || '12:00',
+    method: '現金支付',
+    amount: totalAmount,
+    currency: targetItem.currency || 'JPY',
+    extraFee: !!targetItem.includeTax,
+    category: catMap[targetItem.type] || '景點',
+    title: targetItem.title,
+    payerId: splitMembers[0] || trip.members[0]?.id,
+    splitMode: 'EQUAL',
+    splitMemberIds: splitMembers
+  });
+
+  saveState();
+  showToast(`已將「${targetItem.title}」帶入記帳分帳！`);
+}
+
+// 口袋名單一鍵排入某天行程
+function schedulePocketToDay(pocketId, dayIdx) {
+  const trip = getCurrentTrip();
+  const pocket = (trip.pocketList || []).find(p => p.id === pocketId);
+  const targetDay = trip.days[dayIdx];
+  if (!pocket || !targetDay) return;
+
+  const typeMap = { '美食': 'FOOD', '探索景點': 'SPOT', '購物/伴手禮': 'SPOT' };
+  targetDay.items.push({
+    id: 'item_' + Date.now(),
+    type: typeMap[pocket.type] || 'SPOT',
+    time: '12:00',
+    title: pocket.title,
+    location: pocket.title,
+    price: 0,
+    currency: 'JPY',
+    includeTax: false,
+    isPotential: false,
+    memberIds: trip.members.map(m => m.id),
+    notes: pocket.notes || '',
+    images: pocket.images || [],
+    imagePos: 'top',
+    focalY: 50
+  });
+
+  pocket.scheduledDay = dayIdx + 1;
+  uiState.activeDayIndex = dayIdx;
+  saveState();
+  render();
+  showToast(`已將「${pocket.title}」排入 Day ${dayIdx + 1}！`);
+}
+
+// 套用範本建立新行程並自動平移日期
+function submitCloneTemplate(e, srcTripId) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const newTitle = fd.get('title');
+  const newStartStr = fd.get('newStartDate');
+  const srcTrip = appState.trips.find(t => t.id === srcTripId);
+  if (!srcTrip || !newStartStr) return;
+
+  const copy = JSON.parse(JSON.stringify(srcTrip));
+  copy.id = 'trip_' + Date.now();
+  copy.code = Math.random().toString(36).substring(2, 8).toUpperCase();
+  copy.title = newTitle;
+
+  const [y, m, d] = newStartStr.split('-').map(Number);
+  copy.days.forEach((day, idx) => {
+    const dt = new Date(y, m - 1, d + idx);
+    day.date = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  });
+
+  appState.trips.unshift(copy);
+  appState.activeTripId = copy.id;
+  uiState.activeDayIndex = 0;
+  saveState();
+  closeModal();
+  showToast(`已套用範本並自動平移日期！(代碼: ${copy.code})`);
+}
+
+// JSON 匯出與匯入備份檔
+function exportTripJson() {
+  const trip = getCurrentTrip();
+  if (!trip) return;
+  const blob = new Blob([JSON.stringify(trip, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${trip.title.replace(/[^\w\u4e00-\u9fa5-]/g, '_')}_${trip.code}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('已匯出 JSON 完整備份檔！');
+}
+
+function triggerImportJson() {
+  const input = document.getElementById('json_import_file');
+  if (input) {
+    input.value = '';
+    input.click();
+  }
+}
+
+function handleImportJsonFile(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    try {
+      const parsed = JSON.parse(evt.target.result);
+      if (!parsed || !Array.isArray(parsed.days) || !parsed.title) {
+        showToast('JSON 檔案格式不正確', 'error');
+        return;
+      }
+      parsed.id = 'trip_' + Date.now();
+      if (!parsed.code) parsed.code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      appState.trips.unshift(parsed);
+      appState.activeTripId = parsed.id;
+      uiState.activeDayIndex = 0;
+      saveState();
+      closeModal();
+      showToast(`已成功匯入「${parsed.title}」！`);
+    } catch (err) {
+      showToast('無法解析 JSON 檔案', 'error');
+    }
+  };
+  reader.readAsText(file);
 }
 
 // 日期點擊與對調邏輯
@@ -3424,7 +3966,6 @@ function toggleExpandItem(itemId) {
   render();
 }
 
-// 處理本機圖片上傳轉為壓縮 DataURL
 function handleItemImageUpload(e) {
   const file = e.target.files?.[0];
   if (!file) return;
@@ -3449,7 +3990,6 @@ function handleItemImageUpload(e) {
   reader.readAsDataURL(file);
 }
 
-// 新增或修改行程項目
 function submitItemForm(e, existingId, itemType) {
   e.preventDefault();
   const fd = new FormData(e.target);
@@ -3464,6 +4004,7 @@ function submitItemForm(e, existingId, itemType) {
     time: fd.get('time') || '09:00',
     title: fd.get('title'),
     location: fd.get('location') || '',
+    transitHint: fd.get('transitHint') || '',
     price: Number(fd.get('price')) || 0,
     currency: fd.get('currency') || 'JPY',
     includeTax: fd.get('includeTax') === 'on',
@@ -3484,6 +4025,7 @@ function submitItemForm(e, existingId, itemType) {
     itemData.arrCity = fd.get('arrCity') || '';
     itemData.arrCode = fd.get('arrCode') || '';
     itemData.arrTime = fd.get('arrTime') || '';
+    itemData.isNextDay = fd.get('isNextDay') === 'on';
     itemData.checkedBag = fd.get('checkedBag') || '23kg';
     itemData.carryOnBag = fd.get('carryOnBag') || '7kg';
     itemData.layoverCode = fd.get('layoverCode') || '';
@@ -3494,18 +4036,19 @@ function submitItemForm(e, existingId, itemType) {
   if (itemType === 'TRANSPORT') {
     itemData.transportMode = fd.get('transportMode') || '電車';
     itemData.passTag = fd.get('passTag') || '';
+    itemData.passDayInfo = fd.get('passDayInfo') || '';
     itemData.depStation = fd.get('depStation') || itemData.title;
     itemData.arrStation = fd.get('arrStation') || '';
-    itemData.viaStation = fd.get('viaStation') || '';
     itemData.depTime = itemData.time;
     itemData.arrTime = fd.get('arrTime') || '';
+    itemData.isNextDay = fd.get('isNextDay') === 'on';
+    itemData.segments = uiState.tempSegments.filter(s => s.mode || s.from || s.to);
   }
 
   if (existingId) {
     trip.days.forEach(d => {
       const idx = d.items.findIndex(i => i.id === existingId);
       if (idx !== -1) {
-        itemData.segments = d.items[idx].segments || [];
         d.items[idx] = itemData;
       }
     });
@@ -3530,7 +4073,6 @@ function deleteItineraryItem(itemId) {
   showToast('已刪除該行程項目');
 }
 
-// 產生 LINE 純文字行程摘要
 function generatePlainTextItinerary(trip, shareAll) {
   const daysToShare = shareAll ? trip.days : [trip.days[uiState.activeDayIndex]];
   const startIdx = shareAll ? 0 : uiState.activeDayIndex;
@@ -3547,9 +4089,9 @@ function generatePlainTextItinerary(trip, shareAll) {
         const icon = it.type === 'FLIGHT' ? '✈️' : it.type === 'TRANSPORT' ? '🚆' : it.type === 'FOOD' ? '🍴' : it.type === 'HOTEL' ? '🏨' : '📍';
         lines.push(`${icon} ${it.time} | ${it.title}`);
         if (it.type === 'FLIGHT') {
-          lines.push(`   ${it.airline || ''} ${it.flightNo || ''} · ${it.depCity}${it.depCode} ➝ ${it.arrCity}${it.arrCode}`);
+          lines.push(`   ${it.airline || ''} ${it.flightNo || ''} · ${it.depCity}${it.depCode} ➝ ${it.arrCity}${it.arrCode}${it.isNextDay ? ' (+1天)' : ''}`);
         } else if (it.type === 'TRANSPORT' && it.arrStation) {
-          lines.push(`   ${it.depStation} ➝ ${it.arrStation} ${it.passTag ? `[${it.passTag}]` : ''}`);
+          lines.push(`   ${it.depStation} ➝ ${it.arrStation} ${it.passTag ? `[${it.passTag} ${it.passDayInfo || ''}]` : ''}`);
         }
         if (Number(it.price) > 0) {
           lines.push(`   💰 費用：${it.currency} ${it.price} / 人`);
@@ -3569,17 +4111,6 @@ function copyShareText() {
   showToast('已複製純文字行程，可直接貼上 LINE！');
 }
 
-function copyText(str, msg) {
-  const temp = document.createElement('textarea');
-  temp.value = str;
-  document.body.appendChild(temp);
-  temp.select();
-  document.execCommand('copy');
-  temp.remove();
-  showToast(msg || '已複製！');
-}
-
-// 行程管理：建立、切換、代碼加入、複製、重置
 function selectTrip(tripId) {
   appState.activeTripId = tripId;
   uiState.activeDayIndex = 0;
@@ -3629,6 +4160,7 @@ function submitCreateTrip(e) {
     rates: { ...DEFAULT_RATES },
     poolBalance: 0,
     poolLogs: [],
+    cashExchanges: [],
     members: [{ id: 'm_' + Date.now(), name: '我', avatar: '🐶' }],
     days,
     expenses: [],
@@ -3645,19 +4177,6 @@ function submitCreateTrip(e) {
   saveState();
   closeModal();
   showToast(`已建立新行程 (代碼: ${randomCode})`);
-}
-
-function duplicateCurrentTrip() {
-  const trip = getCurrentTrip();
-  const copy = JSON.parse(JSON.stringify(trip));
-  copy.id = 'trip_' + Date.now();
-  copy.code = Math.random().toString(36).substring(2, 8).toUpperCase();
-  copy.title = `${trip.title} (副本)`;
-  appState.trips.unshift(copy);
-  appState.activeTripId = copy.id;
-  saveState();
-  closeModal();
-  showToast('已建立行程副本！');
 }
 
 function deleteTrip(tripId) {
@@ -3733,11 +4252,23 @@ function setExpenseFilterMember(id) {
   render();
 }
 
+function openAddExpenseModal() {
+  uiState.tempSplitMode = 'EQUAL';
+  openModal('ADD_EXPENSE');
+}
+
+function setTempSplitMode(mode) {
+  uiState.tempSplitMode = mode;
+  render();
+}
+
 function submitAddExpense(e) {
   e.preventDefault();
   const fd = new FormData(e.target);
   const trip = getCurrentTrip();
-  trip.expenses.unshift({
+  const splitMode = uiState.tempSplitMode;
+
+  const newExp = {
     id: 'exp_' + Date.now(),
     date: fd.get('date'),
     time: '12:00',
@@ -3748,8 +4279,26 @@ function submitAddExpense(e) {
     category: fd.get('category'),
     title: fd.get('title'),
     payerId: fd.get('payerId'),
-    splitMemberIds: fd.getAll('splitMemberIds')
-  });
+    splitMode
+  };
+
+  if (splitMode === 'CUSTOM') {
+    const customSplits = {};
+    const splitMemberIds = [];
+    trip.members.forEach(m => {
+      const val = Number(fd.get(`customSplit_${m.id}`)) || 0;
+      if (val > 0) {
+        customSplits[m.id] = val;
+        splitMemberIds.push(m.id);
+      }
+    });
+    newExp.customSplits = customSplits;
+    newExp.splitMemberIds = splitMemberIds;
+  } else {
+    newExp.splitMemberIds = fd.getAll('splitMemberIds');
+  }
+
+  trip.expenses.unshift(newExp);
   saveState();
   closeModal();
   showToast('已新增分帳支出');
@@ -3761,6 +4310,33 @@ function deleteExpense(expId) {
   saveState();
   render();
   showToast('已刪除支出紀錄');
+}
+
+// 外幣現金登記與刪除
+function submitAddCashExchange(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const trip = getCurrentTrip();
+  trip.cashExchanges = trip.cashExchanges || [];
+  trip.cashExchanges.unshift({
+    id: 'ce_' + Date.now(),
+    date: fd.get('date'),
+    currency: fd.get('currency'),
+    foreignAmount: Number(fd.get('foreignAmount')) || 0,
+    twdCost: Number(fd.get('twdCost')) || 0,
+    note: fd.get('note') || ''
+  });
+  saveState();
+  closeModal();
+  showToast('已加入外幣現金袋！');
+}
+
+function deleteCashExchange(id) {
+  const trip = getCurrentTrip();
+  trip.cashExchanges = (trip.cashExchanges || []).filter(c => c.id !== id);
+  saveState();
+  render();
+  showToast('已刪除換匯紀錄');
 }
 
 function submitPoolAction(e, actionType) {
@@ -3841,7 +4417,7 @@ function deleteJournal(journalId) {
   showToast('已刪除日誌');
 }
 
-// 清單操作 (待辦 / 行李 / 想去 / 文件)
+// 清單操作
 function setListSubTab(st) {
   uiState.listSubTab = st;
   render();
@@ -4076,7 +4652,6 @@ function removeMember(memberId) {
   showToast('已移除該成員');
 }
 
-// HTML 安全轉義
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
@@ -4087,7 +4662,6 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-// 啟動應用程式
 window.addEventListener('DOMContentLoaded', () => {
   render();
 });
