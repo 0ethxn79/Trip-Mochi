@@ -135,7 +135,6 @@ const ITEM_TYPES = {
   FLIGHT: { id: 'FLIGHT', label: '航班', tag: 'FLIGHT', color: 'text-teal-700', bg: 'bg-teal-50', border: 'border-teal-200', icon: 'plane' }
 };
 
-// 產生初始示範資料 (保留廣島範本供隨時參考或一鍵套用，預設 activeTripId 為 null 先進入建立新行程)
 function createInitialData() {
   return {
     activeTripId: null,
@@ -634,11 +633,11 @@ function createInitialData() {
         expenses: [],
         journals: [],
         todos: [
-          { id: 'td1', title: '護照（確認效期 6 個月以上）', completedBy: [], comments: [] },
-          { id: 'td2', title: '填寫 Visit Japan Web', completedBy: [], comments: [] },
-          { id: 'td3', title: '日本上網卡 / eSIM 開通設定', completedBy: [], comments: [] },
-          { id: 'td4', title: '日幣現鈔與海外信用卡', completedBy: [], comments: [] },
-          { id: 'td5', title: '電子機票與飯店確認信存入手機', completedBy: [], comments: [] }
+          { id: 'td1', title: '護照（確認效期 6 個月以上）', assignedTo: ['m1'], completedBy: [], comments: [] },
+          { id: 'td2', title: '填寫 Visit Japan Web', assignedTo: ['m1'], completedBy: [], comments: [] },
+          { id: 'td3', title: '日本上網卡 / eSIM 開通設定', assignedTo: ['m1'], completedBy: [], comments: [] },
+          { id: 'td4', title: '日幣現鈔與海外信用卡', assignedTo: ['m1'], completedBy: [], comments: [] },
+          { id: 'td5', title: '電子機票與飯店確認信存入手機', assignedTo: ['m1'], completedBy: [], comments: [] }
         ],
         packing: {
           m1: [
@@ -647,6 +646,7 @@ function createInitialData() {
             { id: 'pk3', category: '衣物', name: '保暖外套、好走運動鞋', packed: false }
           ]
         },
+        packingAlertNote: '',
         pocketList: [
           {
             id: 'pl_demo1',
@@ -667,7 +667,6 @@ function createInitialData() {
   };
 }
 
-// 載入或初始化狀態
 let appState = (() => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -686,15 +685,17 @@ function saveState() {
   }
 }
 
-// UI 暫態狀態
 let uiState = {
-  activeTab: 'itinerary', // itinerary | bookings | expenses | journal | lists | members
+  activeTab: 'itinerary',
   activeDayIndex: 0,
   itineraryFilter: 'ALL',
   swapSourceDayIndex: null,
   expandedItems: {},
+  expandedTodoComments: {},
+  dragMemberIdx: null,
+  currentUserId: null,
   bookingSubTab: 'FLIGHT',
-  expenseSubTab: 'SPLIT', // SPLIT | CASH | POOL
+  expenseSubTab: 'SPLIT',
   expenseFilterMember: 'ALL',
   listSubTab: 'TODO',
   packingMemberId: null,
@@ -705,9 +706,8 @@ let uiState = {
   activeJournalAuthorId: null,
   modal: null,
   lightbox: null,
-  // 表單暫存狀態（用於多段轉乘編輯與非均分切換）
   tempSegments: [],
-  tempSplitMode: 'EQUAL' // EQUAL | CUSTOM
+  tempSplitMode: 'EQUAL'
 };
 
 function getCurrentTrip() {
@@ -746,11 +746,6 @@ function showToast(message, type = 'success') {
   }, 2400);
 }
 
-/**
- * ============================================================================
- * 計算邏輯：個人預計分攤總額、潛在花費、均分/非均分結算、外幣現金餘額
- * ============================================================================
- */
 function calculateTripFinancials(trip) {
   const rates = trip.rates || DEFAULT_RATES;
   const memberTotals = {};
@@ -758,7 +753,6 @@ function calculateTripFinancials(trip) {
     memberTotals[m.id] = { totalTWD: 0, breakdown: [] };
   });
 
-  // 1. 行程項目中的確定花費
   trip.days.forEach((day) => {
     day.items.forEach(item => {
       const price = Number(item.price) || 0;
@@ -784,7 +778,6 @@ function calculateTripFinancials(trip) {
     });
   });
 
-  // 2. 潛在花費清單
   const potentialItems = [];
   let totalPotentialTWD = 0;
   trip.days.forEach((day, dIdx) => {
@@ -809,7 +802,6 @@ function calculateTripFinancials(trip) {
     });
   });
 
-  // 3. 記帳分帳計算（支援均分與自訂非均分金額）
   let totalSplitExpenseTWD = 0;
   const paidByMember = {};
   const owedByMember = {};
@@ -848,18 +840,17 @@ function calculateTripFinancials(trip) {
     }
   });
 
-  // 4. 外幣現金餘額統計
-  const cashSummary = {}; // currency -> { boughtForeign, boughtTWD, spentForeign, remainingForeign }
+  const cashSummary = {};
   (trip.cashExchanges || []).forEach(ex => {
-    const cur = ex.currency || 'JPY';
+    const cur = (ex.currency || 'JPY').toUpperCase();
     if (!cashSummary[cur]) cashSummary[cur] = { boughtForeign: 0, boughtTWD: 0, spentForeign: 0, remainingForeign: 0 };
     cashSummary[cur].boughtForeign += Number(ex.foreignAmount) || 0;
     cashSummary[cur].boughtTWD += Number(ex.twdCost) || 0;
   });
 
   (trip.expenses || []).forEach(exp => {
-    if (exp.method === '現金支付' && exp.currency && exp.currency !== 'TWD') {
-      const cur = exp.currency;
+    if (exp.method === '現金支付' && exp.currency && exp.currency.toUpperCase() !== 'TWD') {
+      const cur = exp.currency.toUpperCase();
       if (!cashSummary[cur]) cashSummary[cur] = { boughtForeign: 0, boughtTWD: 0, spentForeign: 0, remainingForeign: 0 };
       cashSummary[cur].spentForeign += Number(exp.amount) || 0;
     }
@@ -880,16 +871,10 @@ function calculateTripFinancials(trip) {
   };
 }
 
-/**
- * ============================================================================
- * 主渲染進入點
- * ============================================================================
- */
 function render() {
   const trip = getCurrentTrip();
   const appEl = document.getElementById('app');
 
-  // 若尚未選擇行程，一打開先顯示「建立新旅遊手帳」，下方可直接點選或套用廣島範本，並支援匯入 JSON 備份
   if (!trip) {
     appEl.innerHTML = `
       <div class="min-h-screen flex flex-col justify-center px-5 py-8">
@@ -925,7 +910,6 @@ function render() {
             </button>
           </form>
 
-          <!-- 收藏行程 / 廣島範本參考與一鍵套用入口 -->
           ${appState.trips && appState.trips.length > 0 ? `
             <div class="pt-3 border-t border-warmBorder space-y-2.5">
               <div class="text-[11px] font-bold text-stone-500">📚 範本與已建立行程</div>
@@ -952,7 +936,6 @@ function render() {
             </div>
           ` : ''}
 
-          <!-- 行程碼加入 + 匯入 JSON 備份 -->
           <div class="pt-2 space-y-2.5">
             <form onsubmit="joinTripByCode(event)" class="flex items-center gap-2">
               <input type="text" id="trip_code_input" placeholder="輸入行程碼 (如 HIJ319)..."
@@ -984,6 +967,9 @@ function render() {
   if (!uiState.activeJournalAuthorId || !trip.members.find(m => m.id === uiState.activeJournalAuthorId)) {
     uiState.activeJournalAuthorId = trip.members[0]?.id || null;
   }
+  if (!uiState.currentUserId || !trip.members.find(m => m.id === uiState.currentUserId)) {
+    uiState.currentUserId = trip.members[0]?.id || null;
+  }
 
   appEl.innerHTML = `
     ${renderTopHeader(trip)}
@@ -1007,11 +993,6 @@ function render() {
   }
 }
 
-/**
- * ============================================================================
- * 頂部導航與標題列
- * ============================================================================
- */
 function renderTopHeader(trip) {
   return `
     <header class="sticky top-0 z-20 bg-[#F5F3EB]/95 backdrop-blur-md px-4 pt-3 pb-2.5 border-b border-warmBorder/60">
@@ -1055,24 +1036,11 @@ function renderTopHeader(trip) {
             <span>備份</span>
           </button>
         </div>
-        <div class="flex -space-x-1.5">
-          ${trip.members.map(m => `
-            <div onclick="switchTab('members')" title="${escapeHtml(m.name)}"
-              class="w-7 h-7 rounded-full bg-white border-2 border-[#F5F3EB] flex items-center justify-center text-sm shadow-sm cursor-pointer">
-              ${m.avatar}
-            </div>
-          `).join('')}
-        </div>
       </div>
     </header>
   `;
 }
 
-/**
- * ============================================================================
- * 底部 6 大分頁導航列
- * ============================================================================
- */
 function renderBottomNav() {
   const tabs = [
     { id: 'itinerary', label: '行程', icon: 'calendar-days' },
@@ -1115,11 +1083,6 @@ function renderActiveTabContent(trip) {
   }
 }
 
-/**
- * ============================================================================
- * TAB 1: 行程 (Itinerary) - 含時間排序、卡片間移動提示、跨日航班、多段轉乘、一鍵轉記帳
- * ============================================================================
- */
 function renderItineraryTab(trip) {
   const currentDay = trip.days[uiState.activeDayIndex] || trip.days[0];
   const fin = calculateTripFinancials(trip);
@@ -1137,7 +1100,6 @@ function renderItineraryTab(trip) {
 
   return `
     <div class="px-4 pt-3 space-y-3">
-      <!-- 行程日期區塊 -->
       <div class="bg-white rounded-3xl p-3.5 border border-warmBorder shadow-sm">
         <div class="flex items-center justify-between mb-2.5">
           <div class="flex items-center gap-1.5 text-xs font-bold text-charcoal">
@@ -1200,7 +1162,6 @@ function renderItineraryTab(trip) {
         </div>
       </div>
 
-      <!-- 分類篩選列 + 依時間重排 + 潛在花費 -->
       <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
         <button onclick="setItineraryFilter('ALL')"
           class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 transition
@@ -1239,7 +1200,6 @@ function renderItineraryTab(trip) {
         </button>
       </div>
 
-      <!-- 當日時間軸卡片列表 (含卡片間移動方式提示) -->
       ${filteredItems.length === 0 ? `
         <div class="bg-white/70 rounded-3xl border border-dashed border-warmBorder py-16 px-6 text-center">
           <div class="w-14 h-14 rounded-2xl bg-sageLight text-sage mx-auto flex items-center justify-center mb-3">
@@ -1271,7 +1231,6 @@ function renderItineraryTab(trip) {
   `;
 }
 
-// 計算兩張行程卡片之間的時間差提示
 function getTimeGapLabel(curr, next) {
   const startStr = curr.arrTime || curr.time;
   const endStr = next.time;
@@ -1285,9 +1244,6 @@ function getTimeGapLabel(curr, next) {
   return hrs > 0 ? `間隔約 ${hrs} 小時 ${mins > 0 ? mins + ' 分' : ''}` : `移動 / 停留間隔約 ${mins} 分鐘`;
 }
 
-/**
- * 渲染單張行程卡片 (含跨日+1標記、票券天數提醒、多段轉乘明細、一鍵轉入記帳、垂直置中備註)
- */
 function renderItineraryCard(trip, item, idx) {
   const meta = ITEM_TYPES[item.type] || ITEM_TYPES.SPOT;
   const isExpanded = !!uiState.expandedItems[item.id];
@@ -1316,7 +1272,6 @@ function renderItineraryCard(trip, item, idx) {
     .map(id => trip.members.find(m => m.id === id))
     .filter(Boolean);
 
-  // 航班專屬視覺區塊 (支援 +1 跨日標記)
   const renderFlightDetails = () => `
     <div class="mt-3 bg-cream/70 rounded-2xl p-3.5 border border-warmBorder">
       <div class="flex items-center justify-between text-xs mb-2.5">
@@ -1375,7 +1330,6 @@ function renderItineraryCard(trip, item, idx) {
     </div>
   `;
 
-  // 交通路線視覺區塊 (含票券天數提醒 + 多段轉乘)
   const renderTransportDetails = () => `
     <div class="mt-3 bg-cream/70 rounded-2xl p-3.5 border border-warmBorder">
       <div class="flex items-center justify-between flex-wrap gap-1.5 text-xs mb-2">
@@ -1513,7 +1467,6 @@ function renderItineraryCard(trip, item, idx) {
         ${item.type === 'FLIGHT' ? renderFlightDetails() : ''}
         ${item.type === 'TRANSPORT' ? renderTransportDetails() : ''}
 
-        <!-- 備註區塊 (上下垂直完美置中) -->
         ${item.notes ? `
           <div class="mt-3 bg-cream/60 rounded-2xl p-3.5 text-xs text-stone-700 leading-relaxed border border-warmBorder/70 flex items-center">
             <div class="whitespace-pre-line w-full">${escapeHtml(item.notes.trim())}</div>
@@ -1540,11 +1493,6 @@ function renderItineraryCard(trip, item, idx) {
   `;
 }
 
-/**
- * ============================================================================
- * TAB 2: 預訂總覽 (Bookings)
- * ============================================================================
- */
 function renderBookingsTab(trip) {
   const flights = [];
   const hotels = [];
@@ -1628,21 +1576,22 @@ function renderEmptyBooking(icon, title, subtitle) {
   `;
 }
 
-/**
- * ============================================================================
- * TAB 3: 記帳與分帳 (含均分/非均分 + 外幣現金餘額追蹤 + 公費管理)
- * ============================================================================
- */
 function renderExpensesTab(trip) {
   const fin = calculateTripFinancials(trip);
+  // 修正 #10：點選特定成員時，只顯示該成員「先墊付」的支出明細
   const filteredExpenses = (trip.expenses || []).filter(exp => {
     if (uiState.expenseFilterMember === 'ALL') return true;
-    return exp.payerId === uiState.expenseFilterMember || (exp.splitMemberIds || []).includes(uiState.expenseFilterMember);
+    return exp.payerId === uiState.expenseFilterMember;
   });
+
+  const displayedTotalTWD = filteredExpenses.reduce((sum, exp) => {
+    const raw = Number(exp.amount) || 0;
+    const withFee = exp.extraFee ? raw * 1.015 : raw;
+    return sum + convertToTWD(withFee, exp.currency || 'TWD', trip.rates);
+  }, 0);
 
   return `
     <div class="px-4 pt-3 space-y-3.5">
-      <!-- 分帳總覽 / 外幣現金袋 / 公費管理 切換 -->
       <div class="grid grid-cols-3 gap-1.5 bg-white p-1.5 rounded-2xl border border-warmBorder shadow-sm">
         <button onclick="setExpenseSubTab('SPLIT')"
           class="py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition
@@ -1695,13 +1644,15 @@ function renderExpensesTab(trip) {
         </div>
 
         <div class="bg-gradient-to-br from-[#5B7A58] to-[#466343] rounded-3xl p-5 text-white shadow-md">
-          <div class="text-xs font-medium text-white/80">分帳總支出 (TWD)</div>
+          <div class="text-xs font-medium text-white/80">
+            ${uiState.expenseFilterMember === 'ALL' ? '分帳總支出 (TWD)' : '該成員先墊付總額 (TWD)'}
+          </div>
           <div class="text-3xl font-black tracking-tight mt-1">
-            NT$ ${fin.totalSplitExpenseTWD.toLocaleString()}
+            NT$ ${displayedTotalTWD.toLocaleString()}
           </div>
           <div class="mt-3 pt-3 border-t border-white/15 flex items-center justify-between text-xs text-white/90">
             <span>共 ${filteredExpenses.length} 筆支出紀錄</span>
-            <span>平均每人 NT$ ${Math.round(fin.totalSplitExpenseTWD / Math.max(1, trip.members.length)).toLocaleString()}</span>
+            <span>平均每人 NT$ ${Math.round(displayedTotalTWD / Math.max(1, trip.members.length)).toLocaleString()}</span>
           </div>
         </div>
 
@@ -1709,7 +1660,7 @@ function renderExpensesTab(trip) {
           <h3 class="text-xs font-bold text-stone-500 px-1">支出明細</h3>
           ${filteredExpenses.length === 0 ? `
             <div class="bg-white rounded-3xl p-8 text-center border border-warmBorder text-xs text-stone-400">
-              尚無分帳支出紀錄，可點擊「新增支出」或從行程卡片點「+記帳」直接帶入
+              尚無符合的支出紀錄，可點擊「新增支出」或從行程卡片點「+記帳」直接帶入
             </div>
           ` : filteredExpenses.map(exp => {
             const payer = trip.members.find(m => m.id === exp.payerId);
@@ -1740,7 +1691,6 @@ function renderExpensesTab(trip) {
       ` : ''}
 
       ${uiState.expenseSubTab === 'CASH' ? `
-        <!-- 外幣現金餘額追蹤視圖 -->
         <button onclick="openModal('ADD_CASH_EXCHANGE')"
           class="w-full py-3 rounded-2xl bg-sage hover:bg-sageDark text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition">
           <i data-lucide="plus-circle" class="w-4 h-4"></i>
@@ -1806,10 +1756,15 @@ function renderExpensesTab(trip) {
       ` : ''}
 
       ${uiState.expenseSubTab === 'POOL' ? `
-        <div class="bg-gradient-to-br from-[#2B7A69] to-[#1F5C4E] rounded-3xl p-5 text-white shadow-md">
-          <div class="text-xs font-medium text-white/80">公費總額概算 (TWD)</div>
-          <div class="text-3xl font-black tracking-tight mt-1">
-            NT$ ${(trip.poolBalance || 0).toLocaleString()}
+        <div class="bg-gradient-to-br from-[#2B7A69] to-[#1F5C4E] rounded-3xl p-5 text-white shadow-md space-y-2">
+          <div class="text-xs font-medium text-white/80">公費各幣別餘額概覽</div>
+          <div class="flex flex-wrap gap-2.5 pt-1">
+            ${Object.entries(getPoolBalancesByCurrency(trip)).map(([cur, bal]) => `
+              <div class="bg-white/15 rounded-2xl px-3.5 py-2">
+                <div class="text-[10px] text-white/80">${cur}</div>
+                <div class="text-xl font-black">${cur} ${bal.toLocaleString()}</div>
+              </div>
+            `).join('')}
           </div>
         </div>
 
@@ -1837,28 +1792,26 @@ function renderExpensesTab(trip) {
           <h3 class="text-xs font-bold text-stone-500 px-1">公費明細</h3>
           ${(trip.poolLogs || []).length === 0 ? `
             <div class="bg-white rounded-2xl p-8 text-center border border-warmBorder text-xs text-stone-400">尚無公費收支紀錄</div>
-          ` : (trip.poolLogs || []).map(log => `
-            <div class="bg-white rounded-2xl p-3.5 border border-warmBorder flex items-center justify-between">
-              <div>
-                <div class="text-xs font-bold text-charcoal">${escapeHtml(log.title)}</div>
-                <div class="text-[11px] text-stone-400 mt-0.5">${log.date} · ${escapeHtml(log.by)}</div>
+          ` : (trip.poolLogs || []).map(log => {
+            const cur = log.currency || 'TWD';
+            return `
+              <div class="bg-white rounded-2xl p-3.5 border border-warmBorder flex items-center justify-between">
+                <div>
+                  <div class="text-xs font-bold text-charcoal">${escapeHtml(log.title)}</div>
+                  <div class="text-[11px] text-stone-400 mt-0.5">${log.date} · 保管人：${escapeHtml(log.keeper || '未指定')}</div>
+                </div>
+                <span class="text-sm font-black ${log.type === 'deposit' ? 'text-emerald-600' : 'text-red-500'}">
+                  ${log.type === 'deposit' ? '+' : '-'} ${cur} ${Number(log.amount).toLocaleString()}
+                </span>
               </div>
-              <span class="text-sm font-black ${log.type === 'deposit' ? 'text-emerald-600' : 'text-red-500'}">
-                ${log.type === 'deposit' ? '+' : '-'} NT$ ${Number(log.amount).toLocaleString()}
-              </span>
-            </div>
-          `).join('')}
+            `;
+          }).join('')}
         </div>
       ` : ''}
     </div>
   `;
 }
 
-/**
- * ============================================================================
- * TAB 4: 旅行日誌 (Journal)
- * ============================================================================
- */
 function renderJournalTab(trip) {
   const activeAuthor = trip.members.find(m => m.id === uiState.activeJournalAuthorId) || trip.members[0];
 
@@ -1898,9 +1851,14 @@ function renderJournalTab(trip) {
                   <div class="text-[10px] text-stone-400">${escapeHtml(j.date)}</div>
                 </div>
               </div>
-              <button onclick="deleteJournal('${j.id}')" class="text-stone-300 hover:text-red-500 p-1">
-                <i data-lucide="trash-2" class="w-4 h-4"></i>
-              </button>
+              <div class="flex items-center gap-1">
+                <button onclick="openModal('EDIT_JOURNAL', '${j.id}')" class="text-stone-400 hover:text-sage p-1" title="編輯日誌">
+                  <i data-lucide="pencil" class="w-4 h-4"></i>
+                </button>
+                <button onclick="deleteJournal('${j.id}')" class="text-stone-300 hover:text-red-500 p-1" title="刪除日誌">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              </div>
             </div>
 
             <div>
@@ -1959,11 +1917,6 @@ function renderJournalTab(trip) {
   `;
 }
 
-/**
- * ============================================================================
- * TAB 5: 清單 (待辦 / 行李 / 想去口袋名單一鍵排入行程 / 文件)
- * ============================================================================
- */
 function renderListsTab(trip) {
   const subTabs = [
     { id: 'TODO', label: '待辦', icon: 'check-circle-2' },
@@ -1997,16 +1950,34 @@ function renderListsTab(trip) {
 }
 
 function renderTodoSubView(trip) {
-  const activeAuthor = trip.members.find(m => m.id === uiState.activeJournalAuthorId) || trip.members[0];
+  const me = trip.members.find(m => m.id === uiState.currentUserId) || trip.members[0];
 
   return `
     <div class="space-y-3">
-      <form onsubmit="addTodoItem(event)" class="bg-white rounded-2xl p-2.5 border border-warmBorder shadow-sm flex items-center gap-2">
-        <input type="text" id="new_todo_input" placeholder="新增待辦事項 (全體)..."
-          class="flex-1 bg-transparent px-2 py-1.5 text-xs focus:outline-none" />
-        <button type="submit" class="w-9 h-9 rounded-xl bg-sage hover:bg-sageDark text-white flex items-center justify-center shrink-0">
-          <i data-lucide="plus" class="w-4 h-4"></i>
-        </button>
+      <div class="bg-white rounded-2xl px-3.5 py-2.5 border border-warmBorder flex items-center justify-between text-xs">
+        <span class="text-stone-500 font-bold">👤 目前操作身分（留言將自動以此身分送出）：</span>
+        <select onchange="setCurrentDeviceUser(this.value)" class="bg-sageLight text-sageDark font-extrabold px-2.5 py-1 rounded-xl border border-sage/30">
+          ${trip.members.map(m => `<option value="${m.id}" ${m.id === me.id ? 'selected' : ''}>${m.avatar} ${escapeHtml(m.name)}</option>`).join('')}
+        </select>
+      </div>
+
+      <form onsubmit="addTodoItem(event)" class="bg-white rounded-2xl p-3 border border-warmBorder shadow-sm space-y-2.5">
+        <div class="flex items-center gap-2">
+          <input type="text" id="new_todo_input" placeholder="新增待辦事項..."
+            class="flex-1 bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder focus:outline-none" />
+          <button type="submit" class="px-3.5 py-2 rounded-xl bg-sage hover:bg-sageDark text-white text-xs font-bold shrink-0">
+            + 新增
+          </button>
+        </div>
+        <div class="flex items-center flex-wrap gap-1.5 text-[11px]">
+          <span class="text-stone-400 font-bold">指定人員：</span>
+          ${trip.members.map(m => `
+            <label class="inline-flex items-center gap-1 bg-cream px-2 py-1 rounded-full border border-warmBorder cursor-pointer">
+              <input type="checkbox" name="todoAssignees" value="${m.id}" checked class="accent-[#5B7A58]" />
+              <span>${m.avatar} ${escapeHtml(m.name)}</span>
+            </label>
+          `).join('')}
+        </div>
       </form>
 
       ${(trip.todos || []).length === 0 ? `
@@ -2014,14 +1985,21 @@ function renderTodoSubView(trip) {
           這裡空空如也，新增第一項行前準備吧！
         </div>
       ` : (trip.todos || []).map(todo => {
-        const doneCount = (todo.completedBy || []).length;
-        const totalMembers = trip.members.length;
+        const targetIds = (todo.assignedTo && todo.assignedTo.length > 0) ? todo.assignedTo : trip.members.map(m => m.id);
+        const targetMembers = trip.members.filter(m => targetIds.includes(m.id));
+        const doneCount = (todo.completedBy || []).filter(id => targetIds.includes(id)).length;
+        const comments = todo.comments || [];
+        const isExpanded = !!uiState.expandedTodoComments[todo.id];
+
         return `
-          <div class="bg-white rounded-3xl p-4 border border-warmBorder shadow-sm space-y-3">
+          <div class="bg-white rounded-3xl p-4 border border-warmBorder shadow-sm space-y-2.5">
             <div class="flex items-start justify-between gap-2">
-              <div class="flex items-center gap-2">
-                <span class="text-[11px] font-extrabold px-2 py-0.5 rounded-full ${doneCount === totalMembers ? 'bg-sage text-white' : 'bg-sageLight text-sageDark'}">
-                  ${doneCount}/${totalMembers}
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-[11px] font-extrabold px-2 py-0.5 rounded-full ${doneCount === targetMembers.length ? 'bg-sage text-white' : 'bg-sageLight text-sageDark'}">
+                  ${doneCount}/${targetMembers.length}
+                </span>
+                <span class="text-[10px] font-bold bg-cream text-stone-500 px-2 py-0.5 rounded-full">
+                  ${targetMembers.length === trip.members.length ? '全體' : `指定 ${targetMembers.length} 人`}
                 </span>
                 <h4 class="text-sm font-extrabold text-charcoal">${escapeHtml(todo.title)}</h4>
               </div>
@@ -2031,7 +2009,7 @@ function renderTodoSubView(trip) {
             </div>
 
             <div class="flex flex-wrap gap-1.5">
-              ${trip.members.map(m => {
+              ${targetMembers.map(m => {
                 const isDone = (todo.completedBy || []).includes(m.id);
                 return `
                   <button onclick="toggleTodoMember('${todo.id}', '${m.id}')"
@@ -2044,28 +2022,35 @@ function renderTodoSubView(trip) {
               }).join('')}
             </div>
 
-            ${(todo.comments || []).length > 0 ? `
-              <div class="space-y-1.5 pt-2 border-t border-warmBorder/60">
-                ${todo.comments.map(c => {
-                  const cm = trip.members.find(m => m.id === c.memberId);
-                  return `
-                    <div class="bg-cream/80 rounded-xl px-3 py-1.5 text-xs flex items-center justify-between">
-                      <span><b>${cm ? escapeHtml(cm.name) : '旅伴'}：</b>${escapeHtml(c.text)}</span>
-                      <span class="text-[10px] text-stone-400">${c.time || ''}</span>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
-            ` : ''}
-
-            <form onsubmit="addTodoComment(event, '${todo.id}')" class="flex items-center gap-2 pt-1">
-              <input type="text" id="todo_comment_${todo.id}"
-                placeholder="用 ${activeAuthor ? escapeHtml(activeAuthor.name) : '我'} 的身份留言進度..."
-                class="flex-1 bg-cream rounded-full px-3 py-1.5 text-xs border border-warmBorder focus:outline-none focus:border-sage" />
-              <button type="submit" class="w-7 h-7 rounded-full bg-sage text-white flex items-center justify-center shrink-0">
-                <i data-lucide="send" class="w-3 h-3"></i>
+            <div class="pt-1 border-t border-warmBorder/60">
+              <button type="button" onclick="toggleTodoComments('${todo.id}')"
+                class="text-[11px] font-bold text-sageDark bg-sageLight/70 px-2.5 py-1 rounded-full inline-flex items-center gap-1">
+                <span>💬 進度留言 (${comments.length})</span>
+                <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3 h-3"></i>
               </button>
-            </form>
+
+              ${isExpanded ? `
+                <div class="space-y-1.5 mt-2">
+                  ${comments.map(c => {
+                    const cm = trip.members.find(m => m.id === c.memberId);
+                    return `
+                      <div class="bg-cream/80 rounded-xl px-3 py-1.5 text-xs flex items-center justify-between">
+                        <span><b>${cm ? escapeHtml(cm.name) : '旅伴'}：</b>${escapeHtml(c.text)}</span>
+                        <span class="text-[10px] text-stone-400">${c.time || ''}</span>
+                      </div>
+                    `;
+                  }).join('')}
+                  <form onsubmit="addTodoComment(event, '${todo.id}')" class="flex items-center gap-2 pt-1">
+                    <input type="text" id="todo_comment_${todo.id}"
+                      placeholder="以 ${escapeHtml(me.name)} 留言進度..."
+                      class="flex-1 bg-cream rounded-full px-3 py-1.5 text-xs border border-warmBorder focus:outline-none focus:border-sage" />
+                    <button type="submit" class="w-7 h-7 rounded-full bg-sage text-white flex items-center justify-center shrink-0">
+                      <i data-lucide="send" class="w-3 h-3"></i>
+                    </button>
+                  </form>
+                </div>
+              ` : ''}
+            </div>
           </div>
         `;
       }).join('')}
@@ -2084,6 +2069,39 @@ function renderPackingSubView(trip) {
 
   return `
     <div class="space-y-3">
+      <div class="bg-white rounded-3xl p-4 border border-warmBorder shadow-sm space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-extrabold text-charcoal">🧳 夥伴打包進度總覽</span>
+          <button onclick="openModal('PACKING_ALERT_MODAL')"
+            class="text-[11px] font-bold bg-terracottaLight text-terracotta px-2.5 py-1 rounded-full">
+            ⚠️ 設定警示提醒
+          </button>
+        </div>
+        ${trip.packingAlertNote ? `
+          <div class="bg-terracottaLight/80 border border-orange-200 text-terracotta text-xs font-bold px-3 py-2 rounded-2xl flex items-center justify-between">
+            <span>🔔 提醒：${escapeHtml(trip.packingAlertNote)}</span>
+            <button onclick="clearPackingAlert()" class="text-[10px] underline ml-2">清除</button>
+          </div>
+        ` : ''}
+        <div class="grid grid-cols-2 gap-2">
+          ${trip.members.map(m => {
+            const list = (trip.packing && trip.packing[m.id]) || [];
+            const done = list.filter(i => i.packed).length;
+            const ratio = list.length === 0 ? 0 : Math.round((done / list.length) * 100);
+            const isWarn = list.length > 0 && ratio < 100;
+            return `
+              <div onclick="setPackingMember('${m.id}')" class="bg-cream/80 rounded-2xl p-2.5 border ${isWarn ? 'border-orange-200' : 'border-warmBorder'} cursor-pointer">
+                <div class="flex items-center justify-between text-xs font-bold">
+                  <span>${m.avatar} ${escapeHtml(m.name)}</span>
+                  <span class="${ratio === 100 && list.length > 0 ? 'text-sage' : 'text-terracotta'}">${ratio}%</span>
+                </div>
+                <div class="text-[10px] text-stone-400 mt-0.5">${list.length === 0 ? '尚未建立清單' : `已打包 ${done}/${list.length} 件`}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+
       <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
         ${trip.members.map(m => {
           const mItems = (trip.packing && trip.packing[m.id]) || [];
@@ -2167,7 +2185,6 @@ function renderPackingSubView(trip) {
   `;
 }
 
-// 5-3 想去口袋名單筆記視圖 (含一鍵排入第 X 天行程)
 function renderPocketSubView(trip) {
   const list = trip.pocketList || [];
   const filtered = list.filter(item => {
@@ -2240,7 +2257,6 @@ function renderPocketSubView(trip) {
               <p class="text-xs text-stone-600 leading-relaxed bg-cream/70 p-2.5 rounded-2xl">${escapeHtml(item.notes)}</p>
             ` : ''}
 
-            <!-- 一鍵排入第 X 天行程列 -->
             <div class="flex items-center justify-between pt-2 border-t border-warmBorder/60 gap-2">
               <div class="flex items-center gap-1.5">
                 <select onchange="if(this.value !== '') schedulePocketToDay('${item.id}', Number(this.value))"
@@ -2273,8 +2289,10 @@ function renderPocketSubView(trip) {
 }
 
 function renderDocsSubView(trip) {
+  const defaultCats = ['入境資料', '簽證', '保險', '訂單'];
+  const customCats = (trip.documents || []).map(d => d.category).filter(c => c && !defaultCats.includes(c));
+  const cats = ['ALL', ...new Set([...defaultCats, ...customCats])];
   const docs = (trip.documents || []).filter(d => uiState.docCategoryFilter === 'ALL' || d.category === uiState.docCategoryFilter);
-  const cats = ['ALL', '入境資料', '簽證', '保險', '訂單'];
 
   return `
     <div class="space-y-3">
@@ -2321,11 +2339,6 @@ function renderDocsSubView(trip) {
   `;
 }
 
-/**
- * ============================================================================
- * TAB 6: 成員管理與個人預計分攤預覽 (Members)
- * ============================================================================
- */
 function renderMembersTab(trip) {
   const fin = calculateTripFinancials(trip);
 
@@ -2345,12 +2358,18 @@ function renderMembersTab(trip) {
         </button>
       </div>
 
+      <p class="text-[11px] text-stone-400 px-1">💡 拖曳成員卡片可調整順序，點擊卡片可編輯名稱與頭像</p>
+
       <div class="grid grid-cols-2 gap-3">
-        ${trip.members.map(m => {
+        ${trip.members.map((m, idx) => {
           const totalTWD = fin.memberTotals[m.id]?.totalTWD || 0;
           return `
-            <div onclick="openModal('MEMBER_DETAIL', '${m.id}')"
-              class="bg-white rounded-3xl p-4 border border-warmBorder shadow-sm hover:shadow-md transition cursor-pointer flex flex-col items-center text-center">
+            <div draggable="true"
+              ondragstart="handleMemberDragStart(${idx})"
+              ondragover="event.preventDefault()"
+              ondrop="handleMemberDrop(${idx})"
+              onclick="openModal('MEMBER_DETAIL', '${m.id}')"
+              class="bg-white rounded-3xl p-4 border border-warmBorder shadow-sm hover:shadow-md transition cursor-move flex flex-col items-center text-center">
               <div class="w-16 h-16 rounded-full bg-cream border-2 border-sageLight flex items-center justify-center text-3xl mb-2.5 shadow-inner">
                 ${m.avatar}
               </div>
@@ -2367,18 +2386,12 @@ function renderMembersTab(trip) {
   `;
 }
 
-/**
- * ============================================================================
- * 彈窗系統 (Modals)
- * ============================================================================
- */
 function renderModalLayer(trip) {
   if (!uiState.modal) return '';
   const { type, payload } = uiState.modal;
 
   let content = '';
 
-  // 1. 首頁 / 行程切換器 (含套用範本與匯入 JSON)
   if (type === 'HOME_SWITCHER') {
     content = `
       <div class="p-5 space-y-4 max-h-[85vh] overflow-y-auto">
@@ -2444,7 +2457,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 1B. 一鍵套用範本並自動平移日期 Modal
   else if (type === 'CLONE_TEMPLATE_MODAL') {
     const srcTrip = appState.trips.find(t => t.id === payload) || appState.trips[0];
     const defaultStart = srcTrip?.days?.[0]?.date || '2027-03-19';
@@ -2476,7 +2488,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 2. 建立新行程表單
   else if (type === 'CREATE_NEW_TRIP') {
     content = `
       <form onsubmit="submitCreateTrip(event)" class="p-5 space-y-4">
@@ -2510,7 +2521,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 3. 選擇項目類型
   else if (type === 'ADD_TYPE_SELECTOR') {
     const cards = [
       { id: 'SPOT', label: '景點', icon: 'camera', bg: 'bg-emerald-50', color: 'text-emerald-600' },
@@ -2545,7 +2555,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 4. 新增 / 編輯行程項目表單 (含跨日+1標記、票券天數、多段轉乘動態編輯、卡片間移動提示)
   else if (type === 'ITEM_FORM' || type === 'EDIT_ITEM') {
     const existingItem = type === 'EDIT_ITEM'
       ? trip.days.flatMap(d => d.items).find(i => i.id === payload)
@@ -2650,7 +2659,6 @@ function renderModalLayer(trip) {
               <input type="text" name="passDayInfo" value="${escapeHtml(existingItem?.passDayInfo || '')}" placeholder="啟用天數 (如 Day 2 / 共 5 天)" class="bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
             </div>
 
-            <!-- 多段轉乘明細編輯器 -->
             <div class="pt-2 border-t border-warmBorder space-y-2">
               <div class="flex items-center justify-between">
                 <span class="text-[11px] font-extrabold text-charcoal">🔄 多段轉乘明細 (${uiState.tempSegments.length} 段)</span>
@@ -2666,7 +2674,6 @@ function renderModalLayer(trip) {
           </div>
         ` : ''}
 
-        <!-- 費用與潛在花費 -->
         <div class="bg-white rounded-2xl p-3 border border-warmBorder space-y-2.5">
           <div class="flex items-center justify-between">
             <span class="text-xs font-extrabold text-charcoal">💰 每人預計費用</span>
@@ -2690,7 +2697,6 @@ function renderModalLayer(trip) {
           </label>
         </div>
 
-        <!-- 參與分攤人員 -->
         <div class="bg-white rounded-2xl p-3 border border-warmBorder">
           <div class="text-xs font-bold text-charcoal mb-2">參與人員</div>
           <div class="flex flex-wrap gap-1.5">
@@ -2703,7 +2709,6 @@ function renderModalLayer(trip) {
           </div>
         </div>
 
-        <!-- 相片上傳與卡片顯示位置 -->
         <div class="bg-white rounded-2xl p-3 border border-warmBorder space-y-2.5">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-charcoal">🖼️ 相片 / 卡片顯示位置</span>
@@ -2750,7 +2755,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 5. 對調日期確認彈窗
   else if (type === 'SWAP_DAYS_CONFIRM') {
     const { idxA, idxB } = payload;
     const dayA = trip.days[idxA];
@@ -2809,7 +2813,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 6. 編輯當日主題/地點
   else if (type === 'EDIT_DAY_INFO') {
     const dayIdx = payload;
     const day = trip.days[dayIdx];
@@ -2854,7 +2857,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 7. 刪除天數防呆確認
   else if (type === 'DELETE_DAY_CONFIRM') {
     const dayIdx = payload;
     const day = trip.days[dayIdx];
@@ -2875,7 +2877,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 8. 分享行程純文字至 LINE
   else if (type === 'SHARE_ITINERARY') {
     const shareAll = payload === 'ALL';
     const text = generatePlainTextItinerary(trip, shareAll);
@@ -2922,7 +2923,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 9. 潛在花費清單 Modal
   else if (type === 'POTENTIAL_EXPENSES') {
     const fin = calculateTripFinancials(trip);
     const perPersonAvg = trip.members.length > 0 ? Math.round(fin.totalPotentialTWD / trip.members.length) : 0;
@@ -2982,7 +2982,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 10. 行程設定、JSON 匯出/匯入備份與匯出 PDF
   else if (type === 'SETTINGS') {
     const rates = trip.rates || DEFAULT_RATES;
     content = `
@@ -2997,7 +2996,6 @@ function renderModalLayer(trip) {
           </button>
         </div>
 
-        <!-- JSON 完整備份與還原 (防資料遺失 & 傳給旅伴協作) -->
         <div class="bg-white rounded-2xl p-3.5 border border-warmBorder space-y-2.5">
           <div class="text-xs font-extrabold text-charcoal flex items-center gap-1.5">
             <i data-lucide="database" class="w-4 h-4 text-sage"></i>
@@ -3018,7 +3016,6 @@ function renderModalLayer(trip) {
           </div>
         </div>
 
-        <!-- 匯出 PDF 手帳 -->
         <div class="bg-white rounded-2xl p-3.5 border border-warmBorder space-y-2.5">
           <div class="text-xs font-extrabold text-charcoal flex items-center gap-1.5">
             <i data-lucide="file-text" class="w-4 h-4 text-sage"></i>
@@ -3036,14 +3033,20 @@ function renderModalLayer(trip) {
           </div>
         </div>
 
-        <!-- 匯率自定義 -->
         <div class="bg-white rounded-2xl p-3.5 border border-warmBorder space-y-2.5">
-          <div class="text-xs font-extrabold text-charcoal">💱 匯率設定 (相對於 TWD)</div>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-extrabold text-charcoal">💱 匯率設定 (相對於 TWD)</span>
+            <button type="button" onclick="fetchLatestRates()"
+              class="text-[11px] font-bold bg-sageLight hover:bg-sage hover:text-white text-sageDark px-2.5 py-1 rounded-full transition flex items-center gap-1">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+              <span>抓取最新匯率</span>
+            </button>
+          </div>
           <div class="space-y-2">
             ${Object.entries(rates).filter(([k]) => k !== 'TWD').map(([cur, val]) => `
               <div class="flex items-center justify-between gap-2">
                 <span class="text-xs font-extrabold text-charcoal w-14">${cur}</span>
-                <input type="number" step="0.001" value="${val}"
+                <input type="number" step="0.0001" value="${val}"
                   onchange="updateCurrencyRate('${cur}', this.value)"
                   class="flex-1 bg-cream rounded-xl px-3 py-1.5 text-xs border border-warmBorder text-right font-mono" />
                 <button onclick="deleteCurrencyRate('${cur}')" class="text-stone-300 hover:text-red-500 p-1">
@@ -3053,9 +3056,9 @@ function renderModalLayer(trip) {
             `).join('')}
           </div>
           <form onsubmit="addCurrencyRate(event)" class="flex items-center gap-2 pt-1">
-            <input type="text" id="new_cur_code" placeholder="幣別 (如 SGD)" maxlength="4"
+            <input type="text" id="new_cur_code" placeholder="幣別 (如 SGD)" maxlength="5"
               class="w-24 bg-cream rounded-xl px-2.5 py-1.5 text-xs border border-warmBorder uppercase" />
-            <input type="number" step="0.001" id="new_cur_val" placeholder="匯率 (24.2)"
+            <input type="number" step="0.0001" id="new_cur_val" placeholder="匯率 (24.2)"
               class="flex-1 bg-cream rounded-xl px-2.5 py-1.5 text-xs border border-warmBorder" />
             <button type="submit" class="w-8 h-8 rounded-xl bg-sage text-white flex items-center justify-center shrink-0">
               <i data-lucide="plus" class="w-4 h-4"></i>
@@ -3077,7 +3080,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 11. PDF 手冊預覽與列印
   else if (type === 'PDF_PREVIEW') {
     const totalSpots = trip.days.reduce((acc, d) => acc + d.items.length, 0);
     content = `
@@ -3129,7 +3131,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 12. 新增分帳支出 Modal (支援「均分」與「自訂非均分金額」切換)
   else if (type === 'ADD_EXPENSE') {
     const categories = ['交通', '住宿', '餐飲', '景點', '購物', '其他'];
     const isCustom = uiState.tempSplitMode === 'CUSTOM';
@@ -3203,7 +3204,6 @@ function renderModalLayer(trip) {
           </select>
         </div>
 
-        <!-- 分攤方式：均分 vs 自訂非均分 -->
         <div class="bg-white rounded-2xl p-3 border border-warmBorder space-y-2.5">
           <div class="flex items-center justify-between">
             <span class="text-xs font-extrabold text-charcoal">分攤方式</span>
@@ -3249,7 +3249,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 12B. 新增換匯外幣現鈔 Modal
   else if (type === 'ADD_CASH_EXCHANGE') {
     content = `
       <form onsubmit="submitAddCashExchange(event)" class="p-5 space-y-4">
@@ -3266,10 +3265,15 @@ function renderModalLayer(trip) {
               class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
           </div>
           <div>
-            <label class="block text-[11px] font-bold text-stone-500 mb-1">外幣幣別</label>
-            <select name="currency" class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder font-bold">
-              ${Object.keys(trip.rates || DEFAULT_RATES).filter(c => c !== 'TWD').map(c => `<option value="${c}">${c}</option>`).join('')}
-            </select>
+            <label class="block text-[11px] font-bold text-stone-500 mb-1">外幣幣別 (可自訂)</label>
+            <input type="text" name="currency" list="cash_cur_list" value="JPY" maxlength="5" required
+              placeholder="輸入如 JPY / THB"
+              class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder font-bold uppercase" />
+            <datalist id="cash_cur_list">
+              <option value="JPY"></option>
+              <option value="KRW"></option>
+              <option value="USD"></option>
+            </datalist>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-2">
@@ -3296,7 +3300,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 13. 結算建議 Modal
   else if (type === 'SETTLEMENT_SUMMARY') {
     const fin = calculateTripFinancials(trip);
     content = `
@@ -3333,35 +3336,59 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 14. 公費入金/支出 Modal
   else if (type === 'POOL_ACTION') {
     const isDeposit = payload === 'deposit';
     content = `
       <form onsubmit="submitPoolAction(event, '${payload}')" class="p-5 space-y-4">
         <div class="flex items-center justify-between">
           <h3 class="text-base font-extrabold text-charcoal">${isDeposit ? '公費入金' : '紀錄公費支出'}</h3>
-          <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center">
-            <i data-lucide="x" class="w-4 h-4"></i>
-          </button>
+          <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
         </div>
         <div>
           <label class="block text-xs font-bold text-stone-500 mb-1">項目說明</label>
-          <input type="text" name="title" required placeholder="${isDeposit ? '例如：每人再補繳 3000 元' : '例如：超市採買共同食材'}"
+          <input type="text" name="title" required placeholder="${isDeposit ? '例如：每人繳交日幣公費' : '例如：共同晚餐付款'}"
             class="w-full bg-white rounded-2xl px-3.5 py-2.5 text-xs border border-warmBorder" />
         </div>
-        <div>
-          <label class="block text-xs font-bold text-stone-500 mb-1">金額 (TWD)</label>
-          <input type="number" name="amount" required min="1" placeholder="0"
-            class="w-full bg-white rounded-2xl px-3.5 py-2.5 text-sm font-extrabold border border-warmBorder" />
+        <div class="grid grid-cols-3 gap-2">
+          <div class="col-span-2">
+            <label class="block text-xs font-bold text-stone-500 mb-1">金額 *</label>
+            <input type="number" step="0.01" name="amount" required min="0.01" placeholder="0"
+              class="w-full bg-white rounded-2xl px-3.5 py-2.5 text-sm font-extrabold border border-warmBorder" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-stone-500 mb-1">幣別 (可自填)</label>
+            <input type="text" name="currency" list="pool_cur_list" value="TWD" required
+              class="w-full bg-white rounded-2xl px-3 py-2.5 text-xs font-extrabold border border-warmBorder uppercase" />
+            <datalist id="pool_cur_list">
+              <option value="TWD"></option><option value="JPY"></option><option value="KRW"></option><option value="USD"></option>
+            </datalist>
+          </div>
         </div>
-        <button type="submit" class="w-full py-3.5 rounded-2xl ${isDeposit ? 'bg-sage' : 'bg-terracotta'} text-white text-xs font-extrabold">
-          確認送出
-        </button>
+        <div>
+          <label class="block text-xs font-bold text-stone-500 mb-1">${isDeposit ? '指定由誰保管這筆公費？' : '從哪位保管人扣除？'}</label>
+          <select name="keeper" class="w-full bg-white rounded-2xl px-3.5 py-2.5 text-xs font-bold border border-warmBorder">
+            ${trip.members.map(m => `<option value="${escapeHtml(m.name)}">${m.avatar} ${escapeHtml(m.name)}</option>`).join('')}
+          </select>
+        </div>
+        <button type="submit" class="w-full py-3.5 rounded-2xl ${isDeposit ? 'bg-sage' : 'bg-terracotta'} text-white text-xs font-extrabold">確認送出</button>
       </form>
     `;
   }
 
-  // 15. 寫旅行日誌 Modal
+  else if (type === 'PACKING_ALERT_MODAL') {
+    content = `
+      <form onsubmit="submitPackingAlert(event)" class="p-5 space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-extrabold text-charcoal">⚠️ 設定行李警示提醒</h3>
+          <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+        </div>
+        <input type="text" name="alertNote" value="${escapeHtml(trip.packingAlertNote || '')}" required placeholder="例如：明天清晨 05:00 出發，請務必確認護照與行動電源！"
+          class="w-full bg-white rounded-2xl px-3.5 py-2.5 text-xs border border-warmBorder" />
+        <button type="submit" class="w-full py-3 rounded-2xl bg-terracotta text-white text-xs font-extrabold">儲存提醒</button>
+      </form>
+    `;
+  }
+
   else if (type === 'ADD_JOURNAL') {
     content = `
       <form onsubmit="submitAddJournal(event)" class="p-5 space-y-3.5">
@@ -3399,7 +3426,23 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 16. 新增口袋名單筆記 Modal
+  else if (type === 'EDIT_JOURNAL') {
+    const j = (trip.journals || []).find(item => item.id === payload);
+    if (!j) return '';
+    content = `
+      <form onsubmit="submitEditJournal(event, '${j.id}')" class="p-5 space-y-3.5">
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-extrabold text-charcoal">編輯旅行日誌</h3>
+          <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+        </div>
+        <input type="text" name="title" value="${escapeHtml(j.title)}" required class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+        <textarea name="content" rows="4" required class="w-full bg-white rounded-2xl p-3 text-xs border border-warmBorder">${escapeHtml(j.content)}</textarea>
+        <input type="text" name="image" value="${escapeHtml(j.image || '')}" placeholder="照片網址 (選填)" class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+        <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage text-white font-extrabold text-xs">儲存修改</button>
+      </form>
+    `;
+  }
+
   else if (type === 'ADD_POCKET') {
     content = `
       <form onsubmit="submitAddPocket(event)" class="p-5 space-y-3.5">
@@ -3438,7 +3481,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 17. 新增文件 Modal
   else if (type === 'ADD_DOC') {
     content = `
       <form onsubmit="submitAddDoc(event)" class="p-5 space-y-3.5">
@@ -3448,12 +3490,17 @@ function renderModalLayer(trip) {
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
-        <select name="category" class="w-full bg-white rounded-xl px-3 py-2.5 text-xs border border-warmBorder font-bold">
-          <option value="入境資料">入境資料</option>
-          <option value="簽證">簽證</option>
-          <option value="保險">保險</option>
-          <option value="訂單">訂單</option>
-        </select>
+        <div>
+          <label class="block text-[11px] font-bold text-stone-500 mb-1">文件分類 (可選預設或自行輸入新母項目)</label>
+          <input type="text" name="category" list="doc_cat_list" required placeholder="選擇或輸入分類 (如：交通票券、租車憑證)"
+            class="w-full bg-white rounded-xl px-3 py-2.5 text-xs border border-warmBorder font-bold" />
+          <datalist id="doc_cat_list">
+            <option value="入境資料"></option>
+            <option value="簽證"></option>
+            <option value="保險"></option>
+            <option value="訂單"></option>
+          </datalist>
+        </div>
         <input type="text" name="title" required placeholder="文件名稱 (例如：Visit Japan Web QR Code)"
           class="w-full bg-white rounded-xl px-3 py-2.5 text-xs border border-warmBorder" />
         <div>
@@ -3467,7 +3514,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 18. 成員詳細資料與個人費用明細 Modal
   else if (type === 'MEMBER_DETAIL') {
     const member = trip.members.find(m => m.id === payload);
     if (!member) return '';
@@ -3492,10 +3538,16 @@ function renderModalLayer(trip) {
               onchange="renameMember('${member.id}', this.value)"
               class="text-base font-extrabold text-charcoal bg-white px-3 py-1 rounded-xl border border-warmBorder text-center w-40" />
           </div>
-          <button onclick="cycleMemberAvatar('${member.id}')"
-            class="text-[11px] font-bold bg-sageLight text-sageDark px-3 py-1 rounded-full">
-            ✨ 更換可愛頭像
-          </button>
+          <div class="flex items-center gap-1.5">
+            <input type="text" value="${escapeHtml(member.avatar)}" maxlength="4"
+              onchange="setMemberCustomAvatar('${member.id}', this.value)"
+              placeholder="貼上 Emoji"
+              class="w-20 text-center bg-white px-2 py-1 rounded-xl border border-warmBorder text-sm" />
+            <button onclick="cycleMemberAvatar('${member.id}')"
+              class="text-[11px] font-bold bg-sageLight text-sageDark px-3 py-1.5 rounded-full">
+              ✨ 隨機切換
+            </button>
+          </div>
         </div>
 
         <div class="bg-white rounded-2xl p-4 border border-warmBorder text-center">
@@ -3530,7 +3582,6 @@ function renderModalLayer(trip) {
     `;
   }
 
-  // 19. 新增成員 Modal
   else if (type === 'ADD_MEMBER') {
     content = `
       <form onsubmit="submitAddMember(event)" class="p-5 space-y-4">
@@ -3557,13 +3608,17 @@ function renderModalLayer(trip) {
               </label>
             `).join('')}
           </div>
+          <div class="mt-2.5 flex items-center gap-2">
+            <span class="text-xs font-bold text-stone-500">或自訂貼上圖案：</span>
+            <input type="text" name="customAvatar" maxlength="4" placeholder="貼上手機 Emoji (如 🦊)"
+              class="flex-1 bg-white rounded-xl px-3 py-2 text-sm border border-warmBorder" />
+          </div>
         </div>
         <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage text-white text-xs font-extrabold">確認新增</button>
       </form>
     `;
   }
 
-  // 20. 編輯行程主標題 Modal
   else if (type === 'EDIT_TRIP_TITLE') {
     content = `
       <form onsubmit="submitEditTripTitle(event)" class="p-5 space-y-4">
@@ -3589,7 +3644,6 @@ function renderModalLayer(trip) {
   `;
 }
 
-// 多段轉乘表單列渲染
 function renderSegmentsEditorHtml() {
   if (!uiState.tempSegments || uiState.tempSegments.length === 0) {
     return `<div class="text-[11px] text-stone-400 bg-cream/60 rounded-xl p-2.5 text-center">尚無分段轉乘明細，可點右上方「+ 新增轉乘段」</div>`;
@@ -3633,11 +3687,6 @@ function renderLightboxLayer() {
   `;
 }
 
-/**
- * ============================================================================
- * 互動事件與資料操作函式
- * ============================================================================
- */
 function switchTab(tabId) {
   uiState.activeTab = tabId;
   uiState.swapSourceDayIndex = null;
@@ -3677,7 +3726,6 @@ function closeLightbox() {
   render();
 }
 
-// 多段轉乘動態操作
 function addTempSegment() {
   uiState.tempSegments.push({ mode: '', time: '', from: '', to: '', note: '' });
   const container = document.getElementById('segments_editor_container');
@@ -3696,7 +3744,6 @@ function updateTempSegment(idx, field, val) {
   }
 }
 
-// 依時間自動重排當日行程
 function sortDayItemsByTime() {
   const trip = getCurrentTrip();
   const day = trip.days[uiState.activeDayIndex];
@@ -3707,7 +3754,6 @@ function sortDayItemsByTime() {
   showToast('已依時間先後順序重新排列！');
 }
 
-// 行程卡片一鍵轉入記帳
 function convertItemToExpense(itemId) {
   const trip = getCurrentTrip();
   let targetItem = null;
@@ -3748,7 +3794,6 @@ function convertItemToExpense(itemId) {
   showToast(`已將「${targetItem.title}」帶入記帳分帳！`);
 }
 
-// 口袋名單一鍵排入某天行程
 function schedulePocketToDay(pocketId, dayIdx) {
   const trip = getCurrentTrip();
   const pocket = (trip.pocketList || []).find(p => p.id === pocketId);
@@ -3780,7 +3825,6 @@ function schedulePocketToDay(pocketId, dayIdx) {
   showToast(`已將「${pocket.title}」排入 Day ${dayIdx + 1}！`);
 }
 
-// 套用範本建立新行程並自動平移日期
 function submitCloneTemplate(e, srcTripId) {
   e.preventDefault();
   const fd = new FormData(e.target);
@@ -3808,7 +3852,6 @@ function submitCloneTemplate(e, srcTripId) {
   showToast(`已套用範本並自動平移日期！(代碼: ${copy.code})`);
 }
 
-// JSON 匯出與匯入備份檔
 function exportTripJson() {
   const trip = getCurrentTrip();
   if (!trip) return;
@@ -3858,7 +3901,6 @@ function handleImportJsonFile(e) {
   reader.readAsText(file);
 }
 
-// 日期點擊與對調邏輯
 function handleDayClick(idx) {
   if (uiState.swapSourceDayIndex !== null) {
     if (uiState.swapSourceDayIndex === idx) {
@@ -4167,6 +4209,7 @@ function submitCreateTrip(e) {
     journals: [],
     todos: [],
     packing: {},
+    packingAlertNote: '',
     pocketList: [],
     documents: []
   };
@@ -4209,7 +4252,7 @@ function resetAllDemoData() {
   showToast('已重置資料並返回建立新行程畫面！');
 }
 
-// 匯率管理
+// 匯率管理 + 自動抓取最新匯率
 function updateCurrencyRate(cur, val) {
   const trip = getCurrentTrip();
   trip.rates[cur] = Number(val) || 1;
@@ -4234,6 +4277,28 @@ function addCurrencyRate(e) {
   saveState();
   openModal('SETTINGS');
   showToast(`已新增 ${code} 匯率`);
+}
+
+async function fetchLatestRates() {
+  const trip = getCurrentTrip();
+  if (!trip) return;
+  showToast('正在連線抓取最新匯率...');
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/TWD');
+    const data = await res.json();
+    if (data && data.rates) {
+      Object.keys(trip.rates).forEach(cur => {
+        if (cur !== 'TWD' && data.rates[cur]) {
+          trip.rates[cur] = Number((1 / data.rates[cur]).toFixed(4));
+        }
+      });
+      saveState();
+      openModal('SETTINGS');
+      showToast('已更新為最新即時匯率！');
+    }
+  } catch (err) {
+    showToast('抓取匯率失敗，請檢查網路或手動輸入', 'error');
+  }
 }
 
 // 預訂與記帳操作
@@ -4274,7 +4339,7 @@ function submitAddExpense(e) {
     time: '12:00',
     method: fd.get('method'),
     amount: Number(fd.get('amount')) || 0,
-    currency: fd.get('currency'),
+    currency: (fd.get('currency') || 'TWD').toUpperCase(),
     extraFee: fd.get('extraFee') === 'on',
     category: fd.get('category'),
     title: fd.get('title'),
@@ -4312,7 +4377,6 @@ function deleteExpense(expId) {
   showToast('已刪除支出紀錄');
 }
 
-// 外幣現金登記與刪除
 function submitAddCashExchange(e) {
   e.preventDefault();
   const fd = new FormData(e.target);
@@ -4321,7 +4385,7 @@ function submitAddCashExchange(e) {
   trip.cashExchanges.unshift({
     id: 'ce_' + Date.now(),
     date: fd.get('date'),
-    currency: fd.get('currency'),
+    currency: (fd.get('currency') || 'JPY').trim().toUpperCase(),
     foreignAmount: Number(fd.get('foreignAmount')) || 0,
     twdCost: Number(fd.get('twdCost')) || 0,
     note: fd.get('note') || ''
@@ -4339,16 +4403,28 @@ function deleteCashExchange(id) {
   showToast('已刪除換匯紀錄');
 }
 
+function getPoolBalancesByCurrency(trip) {
+  const map = { TWD: 0 };
+  (trip.poolLogs || []).forEach(log => {
+    const cur = (log.currency || 'TWD').toUpperCase();
+    if (map[cur] === undefined) map[cur] = 0;
+    const amt = Number(log.amount) || 0;
+    map[cur] += (log.type === 'deposit' ? amt : -amt);
+  });
+  return map;
+}
+
 function submitPoolAction(e, actionType) {
   e.preventDefault();
   const fd = new FormData(e.target);
   const trip = getCurrentTrip();
   const amount = Number(fd.get('amount')) || 0;
   const title = fd.get('title');
-  if (actionType === 'deposit') {
-    trip.poolBalance = (trip.poolBalance || 0) + amount;
-  } else {
-    trip.poolBalance = (trip.poolBalance || 0) - amount;
+  const currency = (fd.get('currency') || 'TWD').trim().toUpperCase();
+  const keeper = fd.get('keeper') || (trip.members[0]?.name || '成員');
+
+  if (currency === 'TWD') {
+    trip.poolBalance = (trip.poolBalance || 0) + (actionType === 'deposit' ? amount : -amount);
   }
   trip.poolLogs = trip.poolLogs || [];
   trip.poolLogs.unshift({
@@ -4356,12 +4432,14 @@ function submitPoolAction(e, actionType) {
     type: actionType,
     title,
     amount,
+    currency,
+    keeper,
     date: new Date().toISOString().slice(0, 10),
-    by: trip.members[0]?.name || '成員'
+    by: `${keeper} (保管)`
   });
   saveState();
   closeModal();
-  showToast(actionType === 'deposit' ? '已入金至公費！' : '已紀錄公費支出！');
+  showToast(actionType === 'deposit' ? `已入金 ${currency} ${amount}（由 ${keeper} 保管）` : `已紀錄公費支出`);
 }
 
 // 旅行日誌操作
@@ -4387,6 +4465,21 @@ function submitAddJournal(e) {
   saveState();
   closeModal();
   showToast('已發佈旅行日誌！');
+}
+
+function submitEditJournal(e, journalId) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const trip = getCurrentTrip();
+  const j = (trip.journals || []).find(item => item.id === journalId);
+  if (j) {
+    j.title = fd.get('title');
+    j.content = fd.get('content');
+    j.image = (fd.get('image') || '').trim();
+    saveState();
+    closeModal();
+    showToast('已更新旅行日誌！');
+  }
 }
 
 function submitJournalComment(e, journalId) {
@@ -4423,16 +4516,30 @@ function setListSubTab(st) {
   render();
 }
 
+function setCurrentDeviceUser(memberId) {
+  uiState.currentUserId = memberId;
+  render();
+  showToast('已切換本機操作身分');
+}
+
+function toggleTodoComments(todoId) {
+  uiState.expandedTodoComments[todoId] = !uiState.expandedTodoComments[todoId];
+  render();
+}
+
 function addTodoItem(e) {
   e.preventDefault();
   const input = document.getElementById('new_todo_input');
   const title = (input?.value || '').trim();
   if (!title) return;
+  const fd = new FormData(e.target);
+  const assignedTo = fd.getAll('todoAssignees');
   const trip = getCurrentTrip();
   trip.todos = trip.todos || [];
   trip.todos.unshift({
     id: 'td_' + Date.now(),
     title,
+    assignedTo: assignedTo.length > 0 ? assignedTo : trip.members.map(m => m.id),
     completedBy: [],
     comments: []
   });
@@ -4466,10 +4573,11 @@ function addTodoComment(e, todoId) {
     todo.comments = todo.comments || [];
     todo.comments.push({
       id: 'tc_' + Date.now(),
-      memberId: uiState.activeJournalAuthorId || trip.members[0]?.id,
+      memberId: uiState.currentUserId || trip.members[0]?.id,
       text,
       time: new Date().toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' })
     });
+    uiState.expandedTodoComments[todoId] = true;
     saveState();
     render();
   }
@@ -4478,6 +4586,23 @@ function addTodoComment(e, todoId) {
 function deleteTodo(todoId) {
   const trip = getCurrentTrip();
   trip.todos = trip.todos.filter(t => t.id !== todoId);
+  saveState();
+  render();
+}
+
+function submitPackingAlert(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const trip = getCurrentTrip();
+  trip.packingAlertNote = (fd.get('alertNote') || '').trim();
+  saveState();
+  closeModal();
+  showToast('已設定行李警示提醒');
+}
+
+function clearPackingAlert() {
+  const trip = getCurrentTrip();
+  trip.packingAlertNote = '';
   saveState();
   render();
 }
@@ -4585,7 +4710,7 @@ function submitAddDoc(e) {
   trip.documents = trip.documents || [];
   trip.documents.unshift({
     id: 'doc_' + Date.now(),
-    category: fd.get('category'),
+    category: (fd.get('category') || '入境資料').trim(),
     title: fd.get('title'),
     expiry: fd.get('expiry') || '',
     note: fd.get('note') || ''
@@ -4602,22 +4727,52 @@ function deleteDoc(id) {
   render();
 }
 
-// 成員操作
+// 成員操作（含自訂貼上 Emoji、拖移排序）
 function submitAddMember(e) {
   e.preventDefault();
   const fd = new FormData(e.target);
   const trip = getCurrentTrip();
   const newId = 'm_' + Date.now();
+  const customAvatar = (fd.get('customAvatar') || '').trim();
   trip.members.push({
     id: newId,
     name: fd.get('name'),
-    avatar: fd.get('avatar') || '🐶'
+    avatar: customAvatar || fd.get('avatar') || '🐶'
   });
   trip.packing = trip.packing || {};
   trip.packing[newId] = [];
   saveState();
   closeModal();
   showToast('已新增旅伴成員！');
+}
+
+function setMemberCustomAvatar(memberId, avatarStr) {
+  const val = (avatarStr || '').trim();
+  if (!val) return;
+  const trip = getCurrentTrip();
+  const m = trip.members.find(x => x.id === memberId);
+  if (m) {
+    m.avatar = val;
+    saveState();
+    render();
+    showToast('已更新自訂頭像');
+  }
+}
+
+function handleMemberDragStart(idx) {
+  uiState.dragMemberIdx = idx;
+}
+
+function handleMemberDrop(targetIdx) {
+  const fromIdx = uiState.dragMemberIdx;
+  if (fromIdx === null || fromIdx === targetIdx) return;
+  const trip = getCurrentTrip();
+  const [moved] = trip.members.splice(fromIdx, 1);
+  trip.members.splice(targetIdx, 0, moved);
+  uiState.dragMemberIdx = null;
+  saveState();
+  render();
+  showToast('已更新成員排序');
 }
 
 function renameMember(memberId, newName) {
@@ -4628,19 +4783,18 @@ function renameMember(memberId, newName) {
     m.name = newName.trim();
     saveState();
     render();
-    showToast('已更新成員名稱');
+    showToast('已更新成員暱稱');
   }
 }
 
 function cycleMemberAvatar(memberId) {
   const trip = getCurrentTrip();
   const m = trip.members.find(x => x.id === memberId);
-  if (m) {
-    const idx = AVATAR_OPTIONS.indexOf(m.avatar);
-    m.avatar = AVATAR_OPTIONS[(idx + 1) % AVATAR_OPTIONS.length];
-    saveState();
-    render();
-  }
+  if (!m) return;
+  const idx = AVATAR_OPTIONS.indexOf(m.avatar);
+  m.avatar = AVATAR_OPTIONS[(idx + 1) % AVATAR_OPTIONS.length];
+  saveState();
+  render();
 }
 
 function removeMember(memberId) {
@@ -4649,7 +4803,7 @@ function removeMember(memberId) {
   trip.members = trip.members.filter(m => m.id !== memberId);
   saveState();
   closeModal();
-  showToast('已移除該成員');
+  showToast('已移除成員');
 }
 
 function escapeHtml(str) {
@@ -4659,12 +4813,11 @@ function escapeHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+    .replace(/'/g, '&#39;');
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  render();
-});
+render();
 </script>
 </body>
 </html>
+```[cite: 3, 4, 5]
