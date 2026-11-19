@@ -110,11 +110,16 @@
 <script>
 /**
  * ============================================================================
- * Trip Mochi Pro (我的旅遊手帳) - 完整實戰強化版
+ * Trip Mochi Pro (我的旅遊手帳) - 完整實戰強化版 + GAS 雲端同步與 Code 權限
  * ============================================================================
  */
 
 const STORAGE_KEY = 'trip_mochi_app_v5';
+
+// [新增] 雲端同步與 Code 權限設定
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycby3QL_dKcVbbbBNPEGu3EBMFWQfKWMAa2AjLZ_nCh2FpCaxHCq28nZMUsT1OowEK98/exec';
+const CLOUD_META_KEY = 'trip_mochi_cloud_meta_v1';
+const ADMIN_CODE = 'ADMIN-001';
 
 const DEFAULT_RATES = {
   TWD: 1,
@@ -142,6 +147,8 @@ function createInitialData() {
       {
         id: 'trip_hiroshima_sanyo',
         code: 'HIJ319',
+        ownerCode: ADMIN_CODE,
+        editors: [ADMIN_CODE],
         title: '⛩️ 廣島・山陽 6日旅遊手冊範本',
         rates: { TWD: 1, JPY: 0.215, KRW: 0.024, USD: 32.5 },
         poolBalance: 0,
@@ -667,6 +674,48 @@ function createInitialData() {
   };
 }
 
+// [新增] 雲端同步與 Code 權限狀態
+let cloudMeta = (() => {
+  const defaultMeta = {
+    gasUrl: DEFAULT_GAS_URL,
+    currentUserCode: ADMIN_CODE,
+    users: {
+      [ADMIN_CODE]: { code: ADMIN_CODE, name: '主帳號 (Yuma)', role: 'admin' },
+      'TRV-友A01': { code: 'TRV-友A01', name: '測試旅伴 A', role: 'user' },
+      'TRV-友B02': { code: 'TRV-友B02', name: '測試旅伴 B', role: 'user' }
+    },
+    statusText: '本機就緒',
+    isError: false,
+    syncTimer: null
+  };
+  try {
+    const raw = localStorage.getItem(CLOUD_META_KEY);
+    if (!raw) return defaultMeta;
+    const parsed = JSON.parse(raw);
+    return {
+      ...defaultMeta,
+      ...parsed,
+      gasUrl: parsed.gasUrl || DEFAULT_GAS_URL,
+      currentUserCode: parsed.currentUserCode || ADMIN_CODE,
+      users: { ...defaultMeta.users, ...(parsed.users || {}) }
+    };
+  } catch {
+    return defaultMeta;
+  }
+})();
+
+function saveCloudMeta() {
+  try {
+    localStorage.setItem(CLOUD_META_KEY, JSON.stringify({
+      gasUrl: cloudMeta.gasUrl,
+      currentUserCode: cloudMeta.currentUserCode,
+      users: cloudMeta.users
+    }));
+  } catch (e) {
+    console.error('Failed to save cloud meta:', e);
+  }
+}
+
 let appState = (() => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -682,6 +731,144 @@ function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
   } catch (e) {
     showToast('儲存空間已滿，建議減少大型圖片上傳', 'error');
+  }
+}
+
+// [新增] 寫入本機並排程同步至 Google Apps Script 試算表
+function saveAndSync() {
+  saveState();
+  saveCloudMeta();
+  clearTimeout(cloudMeta.syncTimer);
+  cloudMeta.syncTimer = setTimeout(() => {
+    pushToCloud(false);
+  }, 600);
+}
+
+function getCurrentCodeUser() {
+  if (!cloudMeta.users[cloudMeta.currentUserCode]) {
+    cloudMeta.currentUserCode = ADMIN_CODE;
+  }
+  return cloudMeta.users[cloudMeta.currentUserCode];
+}
+
+function canEditTrip(trip) {
+  if (!trip) return false;
+  const user = getCurrentCodeUser();
+  if (user.role === 'admin' || user.code === ADMIN_CODE) return true;
+  if (!trip.ownerCode && (!trip.editors || trip.editors.length === 0)) return true;
+  if (trip.ownerCode === user.code) return true;
+  return Array.isArray(trip.editors) && trip.editors.includes(user.code);
+}
+
+function generateUniqueFriendCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  do {
+    let rand = '';
+    for (let i = 0; i < 5; i++) {
+      rand += chars[Math.floor(Math.random() * chars.length)];
+    }
+    code = `TRV-${rand}`;
+  } while (cloudMeta.users[code]);
+  return code;
+}
+
+function buildTripsMapForCloud() {
+  const map = {};
+  (appState.trips || []).forEach(t => {
+    map[t.id] = {
+      ...t,
+      ownerCode: t.ownerCode || ADMIN_CODE,
+      editors: Array.isArray(t.editors) && t.editors.length > 0 ? t.editors : [t.ownerCode || ADMIN_CODE]
+    };
+  });
+  return map;
+}
+
+async function pullFromCloud(showToastOnResult = false) {
+  if (!cloudMeta.gasUrl) return;
+  cloudMeta.statusText = '雲端同步中...';
+  cloudMeta.isError = false;
+  render();
+
+  try {
+    const res = await fetch(`${cloudMeta.gasUrl}?t=${Date.now()}`, { method: 'GET' });
+    const rawText = await res.text();
+    const json = JSON.parse(rawText);
+    if (!json.ok || !json.data) {
+      throw new Error(json.error || '雲端資料格式異常');
+    }
+
+    if (json.data.users && typeof json.data.users === 'object') {
+      cloudMeta.users = { ...cloudMeta.users, ...json.data.users };
+    }
+
+    if (json.data.trips && typeof json.data.trips === 'object') {
+      const cloudTripList = Object.values(json.data.trips).filter(t => t && t.id && Array.isArray(t.days));
+      if (cloudTripList.length > 0) {
+        const localById = new Map((appState.trips || []).map(t => [t.id, t]));
+        cloudTripList.forEach(ct => {
+          localById.set(ct.id, {
+            ...localById.get(ct.id),
+            ...ct,
+            ownerCode: ct.ownerCode || ADMIN_CODE,
+            editors: Array.isArray(ct.editors) ? ct.editors : [ct.ownerCode || ADMIN_CODE]
+          });
+        });
+        appState.trips = Array.from(localById.values());
+        if (!appState.activeTripId) {
+          appState.activeTripId = appState.trips[0].id;
+        }
+        saveState();
+      }
+    }
+
+    saveCloudMeta();
+    cloudMeta.statusText = `已同步 ${new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}`;
+    cloudMeta.isError = false;
+    render();
+    if (showToastOnResult) showToast('已從雲端抓取最新行程！');
+  } catch (err) {
+    cloudMeta.statusText = '雲端離線(本機模式)';
+    cloudMeta.isError = true;
+    render();
+    if (showToastOnResult) showToast(`雲端抓取失敗：${err.message}`, 'error');
+  }
+}
+
+async function pushToCloud(showToastOnResult = false) {
+  saveState();
+  saveCloudMeta();
+  if (!cloudMeta.gasUrl) return;
+
+  cloudMeta.statusText = '上傳雲端中...';
+  cloudMeta.isError = false;
+  render();
+
+  try {
+    const res = await fetch(cloudMeta.gasUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        users: cloudMeta.users,
+        trips: buildTripsMapForCloud()
+      })
+    });
+    const rawText = await res.text();
+    const json = JSON.parse(rawText);
+    if (!json.ok) {
+      throw new Error(json.error || '雲端寫入失敗');
+    }
+
+    cloudMeta.statusText = `已同步 ${new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}`;
+    cloudMeta.isError = false;
+    render();
+    if (showToastOnResult) showToast('已立即同步至 Google 試算表！');
+  } catch (err) {
+    cloudMeta.statusText = '上傳失敗(已存本機)';
+    cloudMeta.isError = true;
+    render();
+    if (showToastOnResult) showToast(`雲端上傳失敗：${err.message}`, 'error');
   }
 }
 
@@ -993,21 +1180,30 @@ function render() {
   }
 }
 
+// [修改] 頂部導覽列加入雲端同步狀態與 Code 權限按鈕
 function renderTopHeader(trip) {
+  const codeUser = getCurrentCodeUser();
+  const editable = canEditTrip(trip);
+
   return `
     <header class="sticky top-0 z-20 bg-[#F5F3EB]/95 backdrop-blur-md px-4 pt-3 pb-2.5 border-b border-warmBorder/60">
-      <div class="flex items-center justify-between mb-2">
+      <div class="flex items-center justify-between mb-2 gap-1.5">
         <button onclick="openModal('HOME_SWITCHER')"
-          class="inline-flex items-center gap-1 bg-white hover:bg-stone-50 text-charcoal text-xs font-semibold px-3 py-1.5 rounded-full border border-warmBorder shadow-sm active:scale-95 transition">
+          class="inline-flex items-center gap-1 bg-white hover:bg-stone-50 text-charcoal text-xs font-semibold px-3 py-1.5 rounded-full border border-warmBorder shadow-sm active:scale-95 transition shrink-0">
           <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
           <span>返回首頁</span>
         </button>
-        <div class="flex items-center gap-2">
-          <span class="text-[11px] font-mono bg-white/80 text-stone-500 px-2.5 py-1 rounded-full border border-warmBorder">
-            Code: ${trip.code}
-          </span>
+        <div class="flex items-center gap-1.5 min-w-0">
+          <button onclick="pullFromCloud(true)" title="點擊立即抓取雲端最新資料"
+            class="text-[10px] font-bold px-2.5 py-1 rounded-full border truncate ${cloudMeta.isError ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white/90 text-sageDark border-warmBorder'}">
+            ☁️ ${escapeHtml(cloudMeta.statusText)}
+          </button>
+          <button onclick="openModal('CODE_AUTH_MODAL')"
+            class="inline-flex items-center gap-1 bg-white hover:bg-sageLight text-charcoal text-[11px] font-extrabold px-2.5 py-1 rounded-full border border-warmBorder shadow-sm shrink-0">
+            <span>${editable ? '🔓' : '🔒'} ${escapeHtml(codeUser.code)}</span>
+          </button>
           <button onclick="openModal('SETTINGS')"
-            class="w-8 h-8 rounded-full bg-white hover:bg-stone-50 border border-warmBorder flex items-center justify-center text-charcoal shadow-sm active:scale-95 transition"
+            class="w-8 h-8 rounded-full bg-white hover:bg-stone-50 border border-warmBorder flex items-center justify-center text-charcoal shadow-sm active:scale-95 transition shrink-0"
             title="行程設定、JSON備份與匯出PDF">
             <i data-lucide="settings" class="w-4 h-4"></i>
           </button>
@@ -1036,6 +1232,7 @@ function renderTopHeader(trip) {
             <span>備份</span>
           </button>
         </div>
+        ${!editable ? `<span class="text-[11px] font-bold text-terracotta bg-terracottaLight px-2.5 py-1 rounded-full">唯讀模式（輸入旅伴 Code 解鎖）</span>` : ''}
       </div>
     </header>
   `;
@@ -1578,7 +1775,6 @@ function renderEmptyBooking(icon, title, subtitle) {
 
 function renderExpensesTab(trip) {
   const fin = calculateTripFinancials(trip);
-  // 修正 #10：點選特定成員時，只顯示該成員「先墊付」的支出明細
   const filteredExpenses = (trip.expenses || []).filter(exp => {
     if (uiState.expenseFilterMember === 'ALL') return true;
     return exp.payerId === uiState.expenseFilterMember;
@@ -2392,7 +2588,83 @@ function renderModalLayer(trip) {
 
   let content = '';
 
-  if (type === 'HOME_SWITCHER') {
+  // [新增] 測試身分切換 / 輸入旅伴 Code 解鎖編輯權限 / 主帳號總覽 Modal
+  if (type === 'CODE_AUTH_MODAL') {
+    const codeUser = getCurrentCodeUser();
+    const isAdmin = codeUser.role === 'admin' || codeUser.code === ADMIN_CODE;
+    const ownerCode = trip?.ownerCode || ADMIN_CODE;
+    const editors = Array.isArray(trip?.editors) && trip.editors.length > 0 ? trip.editors : [ownerCode];
+    const editable = canEditTrip(trip);
+
+    content = `
+      <div class="p-5 space-y-4 max-h-[86vh] overflow-y-auto">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-extrabold text-charcoal">🔑 旅伴 Code 權限與雲端同步</h3>
+            <p class="text-[11px] text-stone-400">目前身分：<b>${escapeHtml(codeUser.name)}</b> (${codeUser.code}) · ${editable ? '可編輯此行程' : '唯讀'}</p>
+          </div>
+          <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="bg-white rounded-2xl p-3.5 border border-warmBorder space-y-2.5">
+          <div class="text-xs font-extrabold text-charcoal">1. 切換測試身分或產生新旅伴 Code</div>
+          <select onchange="switchCodeUser(this.value)" class="w-full bg-cream rounded-xl px-3 py-2 text-xs font-bold border border-warmBorder">
+            ${Object.values(cloudMeta.users).map(u => `
+              <option value="${u.code}" ${u.code === codeUser.code ? 'selected' : ''}>${escapeHtml(u.name)} (${u.code})</option>
+            `).join('')}
+          </select>
+          <div class="flex items-center gap-2">
+            <input type="text" id="new_code_friend_name" placeholder="新旅伴暱稱 (如：小美)..."
+              class="flex-1 bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder" />
+            <button type="button" onclick="createFriendCodeUser()"
+              class="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold shrink-0">
+              產生 Code 登入
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-3.5 border border-warmBorder space-y-2.5">
+          <div class="text-xs font-extrabold text-charcoal">2. 輸入旅伴 Code 解鎖編輯權限</div>
+          <p class="text-[11px] text-stone-400">此行程建立者 Code：<b>${escapeHtml(ownerCode)}</b> · 已授權：${editors.map(c => escapeHtml(c)).join(', ')}</p>
+          <div class="flex items-center gap-2">
+            <input type="text" id="redeem_friend_code_input" placeholder="輸入旅伴 Code (如 ADMIN-001)..."
+              class="flex-1 bg-cream rounded-xl px-3 py-2 text-xs font-mono uppercase border border-warmBorder" />
+            <button type="button" onclick="redeemFriendCodeForTrip()"
+              class="px-3.5 py-2 rounded-xl bg-sage text-white text-xs font-bold shrink-0">
+              解鎖編輯
+            </button>
+          </div>
+        </div>
+
+        ${isAdmin ? `
+          <div class="bg-amber-50 rounded-2xl p-3.5 border border-amber-200 space-y-2">
+            <div class="text-xs font-extrabold text-amber-950">👑 主帳號總覽：所有使用者與專屬 Code</div>
+            <div class="space-y-1.5 max-h-36 overflow-y-auto">
+              ${Object.values(cloudMeta.users).map(u => `
+                <div class="bg-white rounded-xl px-3 py-2 border border-amber-100 flex items-center justify-between text-xs">
+                  <span class="font-bold text-charcoal">${escapeHtml(u.name)}</span>
+                  <span class="font-mono font-extrabold text-sageDark">${escapeHtml(u.code)}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" onclick="pullFromCloud(true)" class="py-2.5 rounded-2xl bg-white border border-warmBorder text-xs font-bold text-charcoal">
+            🔄 抓雲端最新
+          </button>
+          <button type="button" onclick="pushToCloud(true)" class="py-2.5 rounded-2xl bg-charcoal text-white text-xs font-bold">
+            ☁️ 立即上傳雲端
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  else if (type === 'HOME_SWITCHER') {
     content = `
       <div class="p-5 space-y-4 max-h-[85vh] overflow-y-auto">
         <div class="flex items-center justify-between">
@@ -2998,6 +3270,21 @@ function renderModalLayer(trip) {
 
         <div class="bg-white rounded-2xl p-3.5 border border-warmBorder space-y-2.5">
           <div class="text-xs font-extrabold text-charcoal flex items-center gap-1.5">
+            <i data-lucide="cloud" class="w-4 h-4 text-sage"></i>
+            <span>Google Apps Script 雲端同步</span>
+          </div>
+          <input type="url" id="settings_gas_url" value="${escapeHtml(cloudMeta.gasUrl || '')}"
+            placeholder="https://script.google.com/macros/s/.../exec"
+            class="w-full bg-cream rounded-xl px-3 py-2 text-xs border border-warmBorder font-mono" />
+          <div class="grid grid-cols-3 gap-2">
+            <button type="button" onclick="saveGasUrlFromSettings()" class="py-2 rounded-xl bg-charcoal text-white text-xs font-bold">儲存網址</button>
+            <button type="button" onclick="pullFromCloud(true)" class="py-2 rounded-xl bg-cream border border-warmBorder text-xs font-bold">抓雲端</button>
+            <button type="button" onclick="pushToCloud(true)" class="py-2 rounded-xl bg-sage text-white text-xs font-bold">立即上傳</button>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-3.5 border border-warmBorder space-y-2.5">
+          <div class="text-xs font-extrabold text-charcoal flex items-center gap-1.5">
             <i data-lucide="database" class="w-4 h-4 text-sage"></i>
             <span>跨裝置備份 / 傳給旅伴編輯 (JSON)</span>
           </div>
@@ -3407,1417 +3694,4 @@ function renderModalLayer(trip) {
         <div>
           <label class="block text-xs font-bold text-stone-500 mb-1">日誌標題 *</label>
           <input type="text" name="title" required placeholder="例如：宮島海上大鳥居夕陽太震撼了"
-            class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-        </div>
-        <div>
-          <label class="block text-xs font-bold text-stone-500 mb-1">內容 / 旅遊小撇步 *</label>
-          <textarea name="content" rows="4" required placeholder="寫下心情、攻略或實用提醒..."
-            class="w-full bg-white rounded-2xl p-3 text-xs border border-warmBorder"></textarea>
-        </div>
-        <div>
-          <label class="block text-xs font-bold text-stone-500 mb-1">照片網址 (選填)</label>
-          <input type="text" name="image" placeholder="https://..."
-            class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-        </div>
-        <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage text-white font-extrabold text-xs">
-          發佈日誌
-        </button>
-      </form>
-    `;
-  }
-
-  else if (type === 'EDIT_JOURNAL') {
-    const j = (trip.journals || []).find(item => item.id === payload);
-    if (!j) return '';
-    content = `
-      <form onsubmit="submitEditJournal(event, '${j.id}')" class="p-5 space-y-3.5">
-        <div class="flex items-center justify-between">
-          <h3 class="text-base font-extrabold text-charcoal">編輯旅行日誌</h3>
-          <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
-        </div>
-        <input type="text" name="title" value="${escapeHtml(j.title)}" required class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-        <textarea name="content" rows="4" required class="w-full bg-white rounded-2xl p-3 text-xs border border-warmBorder">${escapeHtml(j.content)}</textarea>
-        <input type="text" name="image" value="${escapeHtml(j.image || '')}" placeholder="照片網址 (選填)" class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-        <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage text-white font-extrabold text-xs">儲存修改</button>
-      </form>
-    `;
-  }
-
-  else if (type === 'ADD_POCKET') {
-    content = `
-      <form onsubmit="submitAddPocket(event)" class="p-5 space-y-3.5">
-        <div class="flex items-center justify-between">
-          <h3 class="text-base font-extrabold text-charcoal">新增口袋名單筆記</h3>
-          <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center">
-            <i data-lucide="x" class="w-4 h-4"></i>
-          </button>
-        </div>
-        <div class="grid grid-cols-3 gap-1.5">
-          ${['美食', '探索景點', '購物/伴手禮'].map((t, i) => `
-            <label class="cursor-pointer">
-              <input type="radio" name="type" value="${t}" ${i === 0 ? 'checked' : ''} class="peer hidden" />
-              <span class="block text-center py-2 rounded-xl bg-white border border-warmBorder peer-checked:bg-sage peer-checked:text-white text-xs font-bold">
-                ${t}
-              </span>
-            </label>
-          `).join('')}
-        </div>
-        <input type="text" name="title" required placeholder="店名 / 景點名稱 *"
-          class="w-full bg-white rounded-xl px-3 py-2.5 text-xs border border-warmBorder" />
-        <div class="grid grid-cols-2 gap-2">
-          <input type="text" name="tag" placeholder="分類標籤 (如 廣島美食)"
-            class="bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-          <input type="text" name="priceRange" placeholder="預算區間 (如 ¥1000-2000)"
-            class="bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-        </div>
-        <input type="text" name="mapUrl" placeholder="Google Maps 連結 (選填)"
-          class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-        <textarea name="notes" rows="3" placeholder="必吃推薦、排隊攻略或購買清單..."
-          class="w-full bg-white rounded-2xl p-3 text-xs border border-warmBorder"></textarea>
-        <button type="submit" class="w-full py-3.5 rounded-2xl bg-terracotta text-white font-extrabold text-xs">
-          新增項目
-        </button>
-      </form>
-    `;
-  }
-
-  else if (type === 'ADD_DOC') {
-    content = `
-      <form onsubmit="submitAddDoc(event)" class="p-5 space-y-3.5">
-        <div class="flex items-center justify-between">
-          <h3 class="text-base font-extrabold text-charcoal">新增入境資料或文件</h3>
-          <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center">
-            <i data-lucide="x" class="w-4 h-4"></i>
-          </button>
-        </div>
-        <div>
-          <label class="block text-[11px] font-bold text-stone-500 mb-1">文件分類 (可選預設或自行輸入新母項目)</label>
-          <input type="text" name="category" list="doc_cat_list" required placeholder="選擇或輸入分類 (如：交通票券、租車憑證)"
-            class="w-full bg-white rounded-xl px-3 py-2.5 text-xs border border-warmBorder font-bold" />
-          <datalist id="doc_cat_list">
-            <option value="入境資料"></option>
-            <option value="簽證"></option>
-            <option value="保險"></option>
-            <option value="訂單"></option>
-          </datalist>
-        </div>
-        <input type="text" name="title" required placeholder="文件名稱 (例如：Visit Japan Web QR Code)"
-          class="w-full bg-white rounded-xl px-3 py-2.5 text-xs border border-warmBorder" />
-        <div>
-          <label class="block text-[11px] font-bold text-stone-500 mb-1">到期日 / 使用日期 (選填)</label>
-          <input type="date" name="expiry" class="w-full bg-white rounded-xl px-3 py-2 text-xs border border-warmBorder" />
-        </div>
-        <textarea name="note" rows="2" placeholder="備註或憑證編號..."
-          class="w-full bg-white rounded-xl p-3 text-xs border border-warmBorder"></textarea>
-        <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage text-white font-extrabold text-xs">儲存文件</button>
-      </form>
-    `;
-  }
-
-  else if (type === 'MEMBER_DETAIL') {
-    const member = trip.members.find(m => m.id === payload);
-    if (!member) return '';
-    const fin = calculateTripFinancials(trip);
-    const data = fin.memberTotals[member.id] || { totalTWD: 0, breakdown: [] };
-
-    content = `
-      <div class="p-5 space-y-4 max-h-[85vh] overflow-y-auto">
-        <div class="flex items-center justify-between">
-          <h3 class="text-base font-extrabold text-charcoal">成員詳細資料</h3>
-          <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center">
-            <i data-lucide="x" class="w-4 h-4"></i>
-          </button>
-        </div>
-
-        <div class="flex flex-col items-center text-center space-y-2">
-          <div class="w-20 h-20 rounded-full bg-white border-2 border-sage flex items-center justify-center text-4xl shadow-sm">
-            ${member.avatar}
-          </div>
-          <div class="flex items-center gap-1.5">
-            <input type="text" value="${escapeHtml(member.name)}"
-              onchange="renameMember('${member.id}', this.value)"
-              class="text-base font-extrabold text-charcoal bg-white px-3 py-1 rounded-xl border border-warmBorder text-center w-40" />
-          </div>
-          <div class="flex items-center gap-1.5">
-            <input type="text" value="${escapeHtml(member.avatar)}" maxlength="4"
-              onchange="setMemberCustomAvatar('${member.id}', this.value)"
-              placeholder="貼上 Emoji"
-              class="w-20 text-center bg-white px-2 py-1 rounded-xl border border-warmBorder text-sm" />
-            <button onclick="cycleMemberAvatar('${member.id}')"
-              class="text-[11px] font-bold bg-sageLight text-sageDark px-3 py-1.5 rounded-full">
-              ✨ 隨機切換
-            </button>
-          </div>
-        </div>
-
-        <div class="bg-white rounded-2xl p-4 border border-warmBorder text-center">
-          <div class="text-xs text-stone-400">預計分攤總額 (TWD)</div>
-          <div class="text-2xl font-black text-sageDark mt-1">NT$ ${data.totalTWD.toLocaleString()}</div>
-        </div>
-
-        <div class="space-y-2">
-          <div class="text-xs font-bold text-stone-500">💰 行程分攤明細 (${data.breakdown.length} 筆)</div>
-          ${data.breakdown.length === 0 ? `
-            <div class="bg-white rounded-2xl p-5 text-center text-xs text-stone-400 border border-warmBorder">尚無分攤項目</div>
-          ` : data.breakdown.map(b => `
-            <div class="bg-white rounded-2xl p-3 border border-warmBorder flex items-center justify-between text-xs">
-              <div class="min-w-0 pr-2">
-                <div class="font-extrabold text-charcoal truncate">${escapeHtml(b.title)}</div>
-                <div class="text-[10px] text-stone-400 mt-0.5">${b.typeLabel} · ${b.date}</div>
-              </div>
-              <span class="font-black text-charcoal shrink-0">NT$ ${b.amountTWD.toLocaleString()}</span>
-            </div>
-          `).join('')}
-        </div>
-
-        <div class="grid grid-cols-2 gap-2 pt-1">
-          ${trip.members.length > 1 ? `
-            <button onclick="removeMember('${member.id}')" class="py-3 rounded-2xl bg-red-50 text-red-600 text-xs font-bold border border-red-200">
-              刪除成員
-            </button>
-          ` : '<div></div>'}
-          <button onclick="closeModal()" class="py-3 rounded-2xl bg-charcoal text-white text-xs font-bold">關閉</button>
-        </div>
-      </div>
-    `;
-  }
-
-  else if (type === 'ADD_MEMBER') {
-    content = `
-      <form onsubmit="submitAddMember(event)" class="p-5 space-y-4">
-        <div class="flex items-center justify-between">
-          <h3 class="text-base font-extrabold text-charcoal">新增旅伴成員</h3>
-          <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center">
-            <i data-lucide="x" class="w-4 h-4"></i>
-          </button>
-        </div>
-        <div>
-          <label class="block text-xs font-bold text-stone-500 mb-1">成員暱稱</label>
-          <input type="text" name="name" required placeholder="例如：小美、阿哲"
-            class="w-full bg-white rounded-2xl px-3.5 py-2.5 text-xs border border-warmBorder" />
-        </div>
-        <div>
-          <label class="block text-xs font-bold text-stone-500 mb-1">選擇可愛頭像</label>
-          <div class="flex flex-wrap gap-2">
-            ${AVATAR_OPTIONS.map((av, idx) => `
-              <label class="cursor-pointer">
-                <input type="radio" name="avatar" value="${av}" ${idx === 0 ? 'checked' : ''} class="peer hidden" />
-                <span class="w-10 h-10 rounded-full bg-white border border-warmBorder peer-checked:border-sage peer-checked:bg-sageLight flex items-center justify-center text-xl">
-                  ${av}
-                </span>
-              </label>
-            `).join('')}
-          </div>
-          <div class="mt-2.5 flex items-center gap-2">
-            <span class="text-xs font-bold text-stone-500">或自訂貼上圖案：</span>
-            <input type="text" name="customAvatar" maxlength="4" placeholder="貼上手機 Emoji (如 🦊)"
-              class="flex-1 bg-white rounded-xl px-3 py-2 text-sm border border-warmBorder" />
-          </div>
-        </div>
-        <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage text-white text-xs font-extrabold">確認新增</button>
-      </form>
-    `;
-  }
-
-  else if (type === 'EDIT_TRIP_TITLE') {
-    content = `
-      <form onsubmit="submitEditTripTitle(event)" class="p-5 space-y-4">
-        <div class="flex items-center justify-between">
-          <h3 class="text-base font-extrabold text-charcoal">修改行程標題</h3>
-          <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center">
-            <i data-lucide="x" class="w-4 h-4"></i>
-          </button>
-        </div>
-        <input type="text" name="title" value="${escapeHtml(trip.title)}" required
-          class="w-full bg-white rounded-2xl px-4 py-3 text-sm font-bold border border-warmBorder" />
-        <button type="submit" class="w-full py-3 rounded-2xl bg-sage text-white text-xs font-extrabold">儲存標題</button>
-      </form>
-    `;
-  }
-
-  return `
-    <div onclick="closeModal()" class="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
-      <div onclick="event.stopPropagation()" class="w-full max-w-[460px] bg-[#F5F3EB] rounded-t-3xl sm:rounded-3xl shadow-2xl border border-warmBorder animate-slide-up">
-        ${content}
-      </div>
-    </div>
-  `;
-}
-
-function renderSegmentsEditorHtml() {
-  if (!uiState.tempSegments || uiState.tempSegments.length === 0) {
-    return `<div class="text-[11px] text-stone-400 bg-cream/60 rounded-xl p-2.5 text-center">尚無分段轉乘明細，可點右上方「+ 新增轉乘段」</div>`;
-  }
-  return uiState.tempSegments.map((seg, idx) => `
-    <div class="bg-cream rounded-xl p-2.5 border border-warmBorder space-y-1.5 text-xs">
-      <div class="flex items-center justify-between">
-        <span class="font-bold text-sageDark">第 ${idx + 1} 段轉乘</span>
-        <button type="button" onclick="removeTempSegment(${idx})" class="text-[11px] text-red-500 font-bold">刪除</button>
-      </div>
-      <div class="grid grid-cols-2 gap-1.5">
-        <input type="text" value="${escapeHtml(seg.mode || '')}" oninput="updateTempSegment(${idx}, 'mode', this.value)"
-          placeholder="列車/路線 (例: JR山陽本線)" class="bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
-        <input type="text" value="${escapeHtml(seg.time || '')}" oninput="updateTempSegment(${idx}, 'time', this.value)"
-          placeholder="時間 (例: 11:30 - 11:57)" class="bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
-      </div>
-      <div class="grid grid-cols-2 gap-1.5">
-        <input type="text" value="${escapeHtml(seg.from || '')}" oninput="updateTempSegment(${idx}, 'from', this.value)"
-          placeholder="上車站與月台" class="bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
-        <input type="text" value="${escapeHtml(seg.to || '')}" oninput="updateTempSegment(${idx}, 'to', this.value)"
-          placeholder="下車站" class="bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
-      </div>
-      <input type="text" value="${escapeHtml(seg.note || '')}" oninput="updateTempSegment(${idx}, 'note', this.value)"
-        placeholder="轉乘停留時間 / 月台方向備註" class="w-full bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
-    </div>
-  `).join('');
-}
-
-function renderLightboxLayer() {
-  if (!uiState.lightbox) return '';
-  const { images, index } = uiState.lightbox;
-  const src = images[index] || images[0];
-  return `
-    <div onclick="closeLightbox()" class="fixed inset-0 z-[60] bg-black/90 flex flex-col items-center justify-center p-4 animate-fade-in">
-      <button onclick="closeLightbox()" class="absolute top-5 right-5 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center">
-        <i data-lucide="x" class="w-5 h-5"></i>
-      </button>
-      <img src="${src}" onclick="event.stopPropagation()" class="max-w-full max-h-[80vh] rounded-2xl object-contain shadow-2xl" />
-      <p class="text-white/70 text-xs mt-4">點擊任意處或右上角關閉 (${index + 1} / ${images.length})</p>
-    </div>
-  `;
-}
-
-function switchTab(tabId) {
-  uiState.activeTab = tabId;
-  uiState.swapSourceDayIndex = null;
-  render();
-}
-
-function openModal(type, payload = null) {
-  if (type === 'EDIT_ITEM') {
-    const trip = getCurrentTrip();
-    const existingItem = trip?.days.flatMap(d => d.items).find(i => i.id === payload);
-    uiState.tempSegments = existingItem?.segments ? JSON.parse(JSON.stringify(existingItem.segments)) : [];
-  } else if (type === 'ITEM_FORM') {
-    uiState.tempSegments = [];
-  }
-  uiState.modal = { type, payload };
-  render();
-}
-
-function openItemFormModal(itemType, existingId) {
-  uiState.tempSegments = [];
-  uiState.modal = { type: 'ITEM_FORM', payload: { type: itemType } };
-  render();
-}
-
-function closeModal() {
-  uiState.modal = null;
-  render();
-}
-
-function openLightbox(images, index = 0) {
-  uiState.lightbox = { images, index };
-  render();
-}
-
-function closeLightbox() {
-  uiState.lightbox = null;
-  render();
-}
-
-function addTempSegment() {
-  uiState.tempSegments.push({ mode: '', time: '', from: '', to: '', note: '' });
-  const container = document.getElementById('segments_editor_container');
-  if (container) container.innerHTML = renderSegmentsEditorHtml();
-}
-
-function removeTempSegment(idx) {
-  uiState.tempSegments.splice(idx, 1);
-  const container = document.getElementById('segments_editor_container');
-  if (container) container.innerHTML = renderSegmentsEditorHtml();
-}
-
-function updateTempSegment(idx, field, val) {
-  if (uiState.tempSegments[idx]) {
-    uiState.tempSegments[idx][field] = val;
-  }
-}
-
-function sortDayItemsByTime() {
-  const trip = getCurrentTrip();
-  const day = trip.days[uiState.activeDayIndex];
-  if (!day) return;
-  day.items.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-  saveState();
-  render();
-  showToast('已依時間先後順序重新排列！');
-}
-
-function convertItemToExpense(itemId) {
-  const trip = getCurrentTrip();
-  let targetItem = null;
-  let targetDate = trip.days[uiState.activeDayIndex]?.date || new Date().toISOString().slice(0, 10);
-
-  trip.days.forEach(d => {
-    const found = d.items.find(i => i.id === itemId);
-    if (found) {
-      targetItem = found;
-      targetDate = d.date;
-    }
-  });
-
-  if (!targetItem) return;
-  const splitMembers = (targetItem.memberIds && targetItem.memberIds.length > 0)
-    ? targetItem.memberIds
-    : trip.members.map(m => m.id);
-  const totalAmount = (Number(targetItem.price) || 0) * Math.max(1, splitMembers.length);
-  const catMap = { FOOD: '餐飲', TRANSPORT: '交通', FLIGHT: '交通', HOTEL: '住宿', SPOT: '景點' };
-
-  trip.expenses = trip.expenses || [];
-  trip.expenses.unshift({
-    id: 'exp_' + Date.now(),
-    date: targetDate,
-    time: targetItem.time || '12:00',
-    method: '現金支付',
-    amount: totalAmount,
-    currency: targetItem.currency || 'JPY',
-    extraFee: !!targetItem.includeTax,
-    category: catMap[targetItem.type] || '景點',
-    title: targetItem.title,
-    payerId: splitMembers[0] || trip.members[0]?.id,
-    splitMode: 'EQUAL',
-    splitMemberIds: splitMembers
-  });
-
-  saveState();
-  showToast(`已將「${targetItem.title}」帶入記帳分帳！`);
-}
-
-function schedulePocketToDay(pocketId, dayIdx) {
-  const trip = getCurrentTrip();
-  const pocket = (trip.pocketList || []).find(p => p.id === pocketId);
-  const targetDay = trip.days[dayIdx];
-  if (!pocket || !targetDay) return;
-
-  const typeMap = { '美食': 'FOOD', '探索景點': 'SPOT', '購物/伴手禮': 'SPOT' };
-  targetDay.items.push({
-    id: 'item_' + Date.now(),
-    type: typeMap[pocket.type] || 'SPOT',
-    time: '12:00',
-    title: pocket.title,
-    location: pocket.title,
-    price: 0,
-    currency: 'JPY',
-    includeTax: false,
-    isPotential: false,
-    memberIds: trip.members.map(m => m.id),
-    notes: pocket.notes || '',
-    images: pocket.images || [],
-    imagePos: 'top',
-    focalY: 50
-  });
-
-  pocket.scheduledDay = dayIdx + 1;
-  uiState.activeDayIndex = dayIdx;
-  saveState();
-  render();
-  showToast(`已將「${pocket.title}」排入 Day ${dayIdx + 1}！`);
-}
-
-function submitCloneTemplate(e, srcTripId) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const newTitle = fd.get('title');
-  const newStartStr = fd.get('newStartDate');
-  const srcTrip = appState.trips.find(t => t.id === srcTripId);
-  if (!srcTrip || !newStartStr) return;
-
-  const copy = JSON.parse(JSON.stringify(srcTrip));
-  copy.id = 'trip_' + Date.now();
-  copy.code = Math.random().toString(36).substring(2, 8).toUpperCase();
-  copy.title = newTitle;
-
-  const [y, m, d] = newStartStr.split('-').map(Number);
-  copy.days.forEach((day, idx) => {
-    const dt = new Date(y, m - 1, d + idx);
-    day.date = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-  });
-
-  appState.trips.unshift(copy);
-  appState.activeTripId = copy.id;
-  uiState.activeDayIndex = 0;
-  saveState();
-  closeModal();
-  showToast(`已套用範本並自動平移日期！(代碼: ${copy.code})`);
-}
-
-function exportTripJson() {
-  const trip = getCurrentTrip();
-  if (!trip) return;
-  const blob = new Blob([JSON.stringify(trip, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${trip.title.replace(/[^\w\u4e00-\u9fa5-]/g, '_')}_${trip.code}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  showToast('已匯出 JSON 完整備份檔！');
-}
-
-function triggerImportJson() {
-  const input = document.getElementById('json_import_file');
-  if (input) {
-    input.value = '';
-    input.click();
-  }
-}
-
-function handleImportJsonFile(e) {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(evt) {
-    try {
-      const parsed = JSON.parse(evt.target.result);
-      if (!parsed || !Array.isArray(parsed.days) || !parsed.title) {
-        showToast('JSON 檔案格式不正確', 'error');
-        return;
-      }
-      parsed.id = 'trip_' + Date.now();
-      if (!parsed.code) parsed.code = Math.random().toString(36).substring(2, 8).toUpperCase();
-      appState.trips.unshift(parsed);
-      appState.activeTripId = parsed.id;
-      uiState.activeDayIndex = 0;
-      saveState();
-      closeModal();
-      showToast(`已成功匯入「${parsed.title}」！`);
-    } catch (err) {
-      showToast('無法解析 JSON 檔案', 'error');
-    }
-  };
-  reader.readAsText(file);
-}
-
-function handleDayClick(idx) {
-  if (uiState.swapSourceDayIndex !== null) {
-    if (uiState.swapSourceDayIndex === idx) {
-      uiState.swapSourceDayIndex = null;
-      render();
-      return;
-    }
-    openModal('SWAP_DAYS_CONFIRM', { idxA: uiState.swapSourceDayIndex, idxB: idx });
-    return;
-  }
-  uiState.activeDayIndex = idx;
-  render();
-}
-
-function toggleSwapMode() {
-  if (uiState.swapSourceDayIndex !== null) {
-    uiState.swapSourceDayIndex = null;
-    showToast('已取消對調模式');
-  } else {
-    uiState.swapSourceDayIndex = uiState.activeDayIndex;
-    showToast('請點選另一天進行日期內容對調');
-  }
-  render();
-}
-
-function cancelSwapDays() {
-  uiState.swapSourceDayIndex = null;
-  closeModal();
-}
-
-function confirmSwapDays(idxA, idxB) {
-  const trip = getCurrentTrip();
-  const dayA = trip.days[idxA];
-  const dayB = trip.days[idxB];
-  const tempItems = dayA.items;
-  const tempEmoji = dayA.themeEmoji;
-  const tempTitle = dayA.themeTitle;
-
-  dayA.items = dayB.items;
-  dayA.themeEmoji = dayB.themeEmoji;
-  dayA.themeTitle = dayB.themeTitle;
-
-  dayB.items = tempItems;
-  dayB.themeEmoji = tempEmoji;
-  dayB.themeTitle = tempTitle;
-
-  uiState.swapSourceDayIndex = null;
-  uiState.activeDayIndex = idxB;
-  saveState();
-  closeModal();
-  showToast('已完成兩天行程對調！');
-}
-
-function addNewDay() {
-  const trip = getCurrentTrip();
-  const lastDay = trip.days[trip.days.length - 1];
-  const parts = lastDay.date.split('-').map(Number);
-  const nextDateObj = new Date(parts[0], parts[1] - 1, parts[2] + 1);
-  const yyyy = nextDateObj.getFullYear();
-  const mm = String(nextDateObj.getMonth() + 1).padStart(2, '0');
-  const dd = String(nextDateObj.getDate()).padStart(2, '0');
-
-  trip.days.push({
-    id: 'day_' + Date.now(),
-    date: `${yyyy}-${mm}-${dd}`,
-    themeEmoji: '✨',
-    themeTitle: `第 ${trip.days.length + 1} 天`,
-    items: []
-  });
-  uiState.activeDayIndex = trip.days.length - 1;
-  saveState();
-  render();
-  showToast(`已新增 Day ${trip.days.length}`);
-}
-
-function submitEditDayInfo(e, dayIdx) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const trip = getCurrentTrip();
-  trip.days[dayIdx].date = fd.get('date');
-  trip.days[dayIdx].themeEmoji = fd.get('themeEmoji');
-  trip.days[dayIdx].themeTitle = fd.get('themeTitle');
-  saveState();
-  closeModal();
-  showToast('已更新當日行程資訊');
-}
-
-function confirmDeleteDay(dayIdx) {
-  const trip = getCurrentTrip();
-  if (trip.days.length <= 1) return;
-  trip.days.splice(dayIdx, 1);
-  uiState.activeDayIndex = Math.max(0, dayIdx - 1);
-  saveState();
-  closeModal();
-  showToast('已刪除該天行程');
-}
-
-function setItineraryFilter(filter) {
-  uiState.itineraryFilter = filter;
-  render();
-}
-
-function toggleExpandItem(itemId) {
-  uiState.expandedItems[itemId] = !uiState.expandedItems[itemId];
-  render();
-}
-
-function handleItemImageUpload(e) {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(evt) {
-    const img = new Image();
-    img.onload = function() {
-      const canvas = document.createElement('canvas');
-      const maxW = 800;
-      const scale = Math.min(1, maxW / img.width);
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const compressed = canvas.toDataURL('image/jpeg', 0.75);
-      const urlInput = document.getElementById('item_image_url');
-      if (urlInput) urlInput.value = compressed;
-      showToast('已載入並最佳化圖片！');
-    };
-    img.src = evt.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-function submitItemForm(e, existingId, itemType) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const trip = getCurrentTrip();
-  const day = trip.days[uiState.activeDayIndex];
-  const memberIds = fd.getAll('memberIds');
-  const imageUrl = (fd.get('imageUrl') || '').trim();
-
-  const itemData = {
-    id: existingId || ('item_' + Date.now()),
-    type: itemType,
-    time: fd.get('time') || '09:00',
-    title: fd.get('title'),
-    location: fd.get('location') || '',
-    transitHint: fd.get('transitHint') || '',
-    price: Number(fd.get('price')) || 0,
-    currency: fd.get('currency') || 'JPY',
-    includeTax: fd.get('includeTax') === 'on',
-    isPotential: fd.get('isPotential') === 'on',
-    memberIds,
-    notes: fd.get('notes') || '',
-    images: imageUrl ? [imageUrl] : [],
-    imagePos: fd.get('imagePos') || 'top',
-    focalY: 50
-  };
-
-  if (itemType === 'FLIGHT') {
-    itemData.airline = fd.get('airline') || '';
-    itemData.flightNo = fd.get('flightNo') || '';
-    itemData.depCity = fd.get('depCity') || '';
-    itemData.depCode = fd.get('depCode') || '';
-    itemData.depTime = itemData.time;
-    itemData.arrCity = fd.get('arrCity') || '';
-    itemData.arrCode = fd.get('arrCode') || '';
-    itemData.arrTime = fd.get('arrTime') || '';
-    itemData.isNextDay = fd.get('isNextDay') === 'on';
-    itemData.checkedBag = fd.get('checkedBag') || '23kg';
-    itemData.carryOnBag = fd.get('carryOnBag') || '7kg';
-    itemData.layoverCode = fd.get('layoverCode') || '';
-    itemData.layoverDuration = fd.get('layoverDuration') || '';
-    itemData.hasLayover = Boolean(itemData.layoverCode);
-  }
-
-  if (itemType === 'TRANSPORT') {
-    itemData.transportMode = fd.get('transportMode') || '電車';
-    itemData.passTag = fd.get('passTag') || '';
-    itemData.passDayInfo = fd.get('passDayInfo') || '';
-    itemData.depStation = fd.get('depStation') || itemData.title;
-    itemData.arrStation = fd.get('arrStation') || '';
-    itemData.depTime = itemData.time;
-    itemData.arrTime = fd.get('arrTime') || '';
-    itemData.isNextDay = fd.get('isNextDay') === 'on';
-    itemData.segments = uiState.tempSegments.filter(s => s.mode || s.from || s.to);
-  }
-
-  if (existingId) {
-    trip.days.forEach(d => {
-      const idx = d.items.findIndex(i => i.id === existingId);
-      if (idx !== -1) {
-        d.items[idx] = itemData;
-      }
-    });
-    showToast('已更新行程項目');
-  } else {
-    day.items.push(itemData);
-    day.items.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-    showToast('已成功新增行程！');
-  }
-
-  saveState();
-  closeModal();
-}
-
-function deleteItineraryItem(itemId) {
-  const trip = getCurrentTrip();
-  trip.days.forEach(d => {
-    d.items = d.items.filter(i => i.id !== itemId);
-  });
-  saveState();
-  closeModal();
-  showToast('已刪除該行程項目');
-}
-
-function generatePlainTextItinerary(trip, shareAll) {
-  const daysToShare = shareAll ? trip.days : [trip.days[uiState.activeDayIndex]];
-  const startIdx = shareAll ? 0 : uiState.activeDayIndex;
-
-  let lines = [`📔 ${trip.title} (代碼: ${trip.code})`, ''];
-  daysToShare.forEach((day, offset) => {
-    const { md, weekday } = formatDateParts(day.date);
-    lines.push(`📅 ${md} (${weekday}) Day ${startIdx + offset + 1}`);
-    lines.push(`${day.themeEmoji || '📍'} ${day.themeTitle || ''}`);
-    if (day.items.length === 0) {
-      lines.push('  (今日尚無排定行程)');
-    } else {
-      day.items.forEach(it => {
-        const icon = it.type === 'FLIGHT' ? '✈️' : it.type === 'TRANSPORT' ? '🚆' : it.type === 'FOOD' ? '🍴' : it.type === 'HOTEL' ? '🏨' : '📍';
-        lines.push(`${icon} ${it.time} | ${it.title}`);
-        if (it.type === 'FLIGHT') {
-          lines.push(`   ${it.airline || ''} ${it.flightNo || ''} · ${it.depCity}${it.depCode} ➝ ${it.arrCity}${it.arrCode}${it.isNextDay ? ' (+1天)' : ''}`);
-        } else if (it.type === 'TRANSPORT' && it.arrStation) {
-          lines.push(`   ${it.depStation} ➝ ${it.arrStation} ${it.passTag ? `[${it.passTag} ${it.passDayInfo || ''}]` : ''}`);
-        }
-        if (Number(it.price) > 0) {
-          lines.push(`   💰 費用：${it.currency} ${it.price} / 人`);
-        }
-      });
-    }
-    lines.push('');
-  });
-  return lines.join('\n').trim();
-}
-
-function copyShareText() {
-  const box = document.getElementById('share_text_box');
-  if (!box) return;
-  box.select();
-  document.execCommand('copy');
-  showToast('已複製純文字行程，可直接貼上 LINE！');
-}
-
-function selectTrip(tripId) {
-  appState.activeTripId = tripId;
-  uiState.activeDayIndex = 0;
-  saveState();
-  closeModal();
-  showToast('已開啟旅遊手帳');
-}
-
-function joinTripByCode(e) {
-  e.preventDefault();
-  const code = (document.getElementById('trip_code_input')?.value || '').trim().toUpperCase();
-  if (!code) return;
-  const found = appState.trips.find(t => t.code.toUpperCase() === code);
-  if (found) {
-    selectTrip(found.id);
-  } else {
-    showToast('找不到此行程碼，請試試 HIJ319', 'error');
-  }
-}
-
-function submitCreateTrip(e) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const title = fd.get('title');
-  const startDate = fd.get('startDate');
-  const daysCount = Math.min(30, Math.max(1, Number(fd.get('daysCount')) || 3));
-  const parts = startDate.split('-').map(Number);
-
-  const days = [];
-  for (let i = 0; i < daysCount; i++) {
-    const d = new Date(parts[0], parts[1] - 1, parts[2] + i);
-    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    days.push({
-      id: `d_${Date.now()}_${i}`,
-      date: dateStr,
-      themeEmoji: i === 0 ? '✈️' : '📍',
-      themeTitle: i === 0 ? '出發日' : `第 ${i + 1} 天`,
-      items: []
-    });
-  }
-
-  const randomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-  const newTrip = {
-    id: 'trip_' + Date.now(),
-    code: randomCode,
-    title,
-    rates: { ...DEFAULT_RATES },
-    poolBalance: 0,
-    poolLogs: [],
-    cashExchanges: [],
-    members: [{ id: 'm_' + Date.now(), name: '我', avatar: '🐶' }],
-    days,
-    expenses: [],
-    journals: [],
-    todos: [],
-    packing: {},
-    packingAlertNote: '',
-    pocketList: [],
-    documents: []
-  };
-
-  appState.trips.unshift(newTrip);
-  appState.activeTripId = newTrip.id;
-  uiState.activeDayIndex = 0;
-  saveState();
-  closeModal();
-  showToast(`已建立新行程 (代碼: ${randomCode})`);
-}
-
-function deleteTrip(tripId) {
-  if (appState.trips.length <= 1) return;
-  appState.trips = appState.trips.filter(t => t.id !== tripId);
-  if (appState.activeTripId === tripId) {
-    appState.activeTripId = appState.trips[0].id;
-  }
-  saveState();
-  render();
-  showToast('已移除行程');
-}
-
-function submitEditTripTitle(e) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const trip = getCurrentTrip();
-  trip.title = fd.get('title');
-  saveState();
-  closeModal();
-  showToast('已更新行程名稱');
-}
-
-function resetAllDemoData() {
-  localStorage.removeItem(STORAGE_KEY);
-  appState = createInitialData();
-  uiState.activeDayIndex = 0;
-  saveState();
-  closeModal();
-  showToast('已重置資料並返回建立新行程畫面！');
-}
-
-// 匯率管理 + 自動抓取最新匯率
-function updateCurrencyRate(cur, val) {
-  const trip = getCurrentTrip();
-  trip.rates[cur] = Number(val) || 1;
-  saveState();
-  showToast(`已更新 ${cur} 匯率`);
-}
-
-function deleteCurrencyRate(cur) {
-  const trip = getCurrentTrip();
-  delete trip.rates[cur];
-  saveState();
-  openModal('SETTINGS');
-}
-
-function addCurrencyRate(e) {
-  e.preventDefault();
-  const code = (document.getElementById('new_cur_code')?.value || '').trim().toUpperCase();
-  const val = Number(document.getElementById('new_cur_val')?.value);
-  if (!code || !val) return;
-  const trip = getCurrentTrip();
-  trip.rates[code] = val;
-  saveState();
-  openModal('SETTINGS');
-  showToast(`已新增 ${code} 匯率`);
-}
-
-async function fetchLatestRates() {
-  const trip = getCurrentTrip();
-  if (!trip) return;
-  showToast('正在連線抓取最新匯率...');
-  try {
-    const res = await fetch('https://open.er-api.com/v6/latest/TWD');
-    const data = await res.json();
-    if (data && data.rates) {
-      Object.keys(trip.rates).forEach(cur => {
-        if (cur !== 'TWD' && data.rates[cur]) {
-          trip.rates[cur] = Number((1 / data.rates[cur]).toFixed(4));
-        }
-      });
-      saveState();
-      openModal('SETTINGS');
-      showToast('已更新為最新即時匯率！');
-    }
-  } catch (err) {
-    showToast('抓取匯率失敗，請檢查網路或手動輸入', 'error');
-  }
-}
-
-// 預訂與記帳操作
-function setBookingSubTab(st) {
-  uiState.bookingSubTab = st;
-  render();
-}
-
-function setExpenseSubTab(st) {
-  uiState.expenseSubTab = st;
-  render();
-}
-
-function setExpenseFilterMember(id) {
-  uiState.expenseFilterMember = id;
-  render();
-}
-
-function openAddExpenseModal() {
-  uiState.tempSplitMode = 'EQUAL';
-  openModal('ADD_EXPENSE');
-}
-
-function setTempSplitMode(mode) {
-  uiState.tempSplitMode = mode;
-  render();
-}
-
-function submitAddExpense(e) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const trip = getCurrentTrip();
-  const splitMode = uiState.tempSplitMode;
-
-  const newExp = {
-    id: 'exp_' + Date.now(),
-    date: fd.get('date'),
-    time: '12:00',
-    method: fd.get('method'),
-    amount: Number(fd.get('amount')) || 0,
-    currency: (fd.get('currency') || 'TWD').toUpperCase(),
-    extraFee: fd.get('extraFee') === 'on',
-    category: fd.get('category'),
-    title: fd.get('title'),
-    payerId: fd.get('payerId'),
-    splitMode
-  };
-
-  if (splitMode === 'CUSTOM') {
-    const customSplits = {};
-    const splitMemberIds = [];
-    trip.members.forEach(m => {
-      const val = Number(fd.get(`customSplit_${m.id}`)) || 0;
-      if (val > 0) {
-        customSplits[m.id] = val;
-        splitMemberIds.push(m.id);
-      }
-    });
-    newExp.customSplits = customSplits;
-    newExp.splitMemberIds = splitMemberIds;
-  } else {
-    newExp.splitMemberIds = fd.getAll('splitMemberIds');
-  }
-
-  trip.expenses.unshift(newExp);
-  saveState();
-  closeModal();
-  showToast('已新增分帳支出');
-}
-
-function deleteExpense(expId) {
-  const trip = getCurrentTrip();
-  trip.expenses = trip.expenses.filter(e => e.id !== expId);
-  saveState();
-  render();
-  showToast('已刪除支出紀錄');
-}
-
-function submitAddCashExchange(e) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const trip = getCurrentTrip();
-  trip.cashExchanges = trip.cashExchanges || [];
-  trip.cashExchanges.unshift({
-    id: 'ce_' + Date.now(),
-    date: fd.get('date'),
-    currency: (fd.get('currency') || 'JPY').trim().toUpperCase(),
-    foreignAmount: Number(fd.get('foreignAmount')) || 0,
-    twdCost: Number(fd.get('twdCost')) || 0,
-    note: fd.get('note') || ''
-  });
-  saveState();
-  closeModal();
-  showToast('已加入外幣現金袋！');
-}
-
-function deleteCashExchange(id) {
-  const trip = getCurrentTrip();
-  trip.cashExchanges = (trip.cashExchanges || []).filter(c => c.id !== id);
-  saveState();
-  render();
-  showToast('已刪除換匯紀錄');
-}
-
-function getPoolBalancesByCurrency(trip) {
-  const map = { TWD: 0 };
-  (trip.poolLogs || []).forEach(log => {
-    const cur = (log.currency || 'TWD').toUpperCase();
-    if (map[cur] === undefined) map[cur] = 0;
-    const amt = Number(log.amount) || 0;
-    map[cur] += (log.type === 'deposit' ? amt : -amt);
-  });
-  return map;
-}
-
-function submitPoolAction(e, actionType) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const trip = getCurrentTrip();
-  const amount = Number(fd.get('amount')) || 0;
-  const title = fd.get('title');
-  const currency = (fd.get('currency') || 'TWD').trim().toUpperCase();
-  const keeper = fd.get('keeper') || (trip.members[0]?.name || '成員');
-
-  if (currency === 'TWD') {
-    trip.poolBalance = (trip.poolBalance || 0) + (actionType === 'deposit' ? amount : -amount);
-  }
-  trip.poolLogs = trip.poolLogs || [];
-  trip.poolLogs.unshift({
-    id: 'pl_' + Date.now(),
-    type: actionType,
-    title,
-    amount,
-    currency,
-    keeper,
-    date: new Date().toISOString().slice(0, 10),
-    by: `${keeper} (保管)`
-  });
-  saveState();
-  closeModal();
-  showToast(actionType === 'deposit' ? `已入金 ${currency} ${amount}（由 ${keeper} 保管）` : `已紀錄公費支出`);
-}
-
-// 旅行日誌操作
-function setJournalAuthor(memberId) {
-  uiState.activeJournalAuthorId = memberId;
-  render();
-}
-
-function submitAddJournal(e) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const trip = getCurrentTrip();
-  trip.journals = trip.journals || [];
-  trip.journals.unshift({
-    id: 'j_' + Date.now(),
-    authorId: fd.get('authorId'),
-    date: new Date().toLocaleString('zh-TW', { hour12: false }).slice(0, 16),
-    title: fd.get('title'),
-    content: fd.get('content'),
-    image: (fd.get('image') || '').trim(),
-    comments: []
-  });
-  saveState();
-  closeModal();
-  showToast('已發佈旅行日誌！');
-}
-
-function submitEditJournal(e, journalId) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const trip = getCurrentTrip();
-  const j = (trip.journals || []).find(item => item.id === journalId);
-  if (j) {
-    j.title = fd.get('title');
-    j.content = fd.get('content');
-    j.image = (fd.get('image') || '').trim();
-    saveState();
-    closeModal();
-    showToast('已更新旅行日誌！');
-  }
-}
-
-function submitJournalComment(e, journalId) {
-  e.preventDefault();
-  const input = document.getElementById(`j_comment_${journalId}`);
-  const text = (input?.value || '').trim();
-  if (!text) return;
-  const trip = getCurrentTrip();
-  const journal = trip.journals.find(j => j.id === journalId);
-  if (journal) {
-    journal.comments = journal.comments || [];
-    journal.comments.push({
-      id: 'c_' + Date.now(),
-      memberId: uiState.activeJournalAuthorId || trip.members[0]?.id,
-      text,
-      time: new Date().toTimeString().slice(0, 5)
-    });
-    saveState();
-    render();
-  }
-}
-
-function deleteJournal(journalId) {
-  const trip = getCurrentTrip();
-  trip.journals = trip.journals.filter(j => j.id !== journalId);
-  saveState();
-  render();
-  showToast('已刪除日誌');
-}
-
-// 清單操作
-function setListSubTab(st) {
-  uiState.listSubTab = st;
-  render();
-}
-
-function setCurrentDeviceUser(memberId) {
-  uiState.currentUserId = memberId;
-  render();
-  showToast('已切換本機操作身分');
-}
-
-function toggleTodoComments(todoId) {
-  uiState.expandedTodoComments[todoId] = !uiState.expandedTodoComments[todoId];
-  render();
-}
-
-function addTodoItem(e) {
-  e.preventDefault();
-  const input = document.getElementById('new_todo_input');
-  const title = (input?.value || '').trim();
-  if (!title) return;
-  const fd = new FormData(e.target);
-  const assignedTo = fd.getAll('todoAssignees');
-  const trip = getCurrentTrip();
-  trip.todos = trip.todos || [];
-  trip.todos.unshift({
-    id: 'td_' + Date.now(),
-    title,
-    assignedTo: assignedTo.length > 0 ? assignedTo : trip.members.map(m => m.id),
-    completedBy: [],
-    comments: []
-  });
-  saveState();
-  render();
-  showToast('已新增待辦事項');
-}
-
-function toggleTodoMember(todoId, memberId) {
-  const trip = getCurrentTrip();
-  const todo = trip.todos.find(t => t.id === todoId);
-  if (!todo) return;
-  todo.completedBy = todo.completedBy || [];
-  if (todo.completedBy.includes(memberId)) {
-    todo.completedBy = todo.completedBy.filter(id => id !== memberId);
-  } else {
-    todo.completedBy.push(memberId);
-  }
-  saveState();
-  render();
-}
-
-function addTodoComment(e, todoId) {
-  e.preventDefault();
-  const input = document.getElementById(`todo_comment_${todoId}`);
-  const text = (input?.value || '').trim();
-  if (!text) return;
-  const trip = getCurrentTrip();
-  const todo = trip.todos.find(t => t.id === todoId);
-  if (todo) {
-    todo.comments = todo.comments || [];
-    todo.comments.push({
-      id: 'tc_' + Date.now(),
-      memberId: uiState.currentUserId || trip.members[0]?.id,
-      text,
-      time: new Date().toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' })
-    });
-    uiState.expandedTodoComments[todoId] = true;
-    saveState();
-    render();
-  }
-}
-
-function deleteTodo(todoId) {
-  const trip = getCurrentTrip();
-  trip.todos = trip.todos.filter(t => t.id !== todoId);
-  saveState();
-  render();
-}
-
-function submitPackingAlert(e) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const trip = getCurrentTrip();
-  trip.packingAlertNote = (fd.get('alertNote') || '').trim();
-  saveState();
-  closeModal();
-  showToast('已設定行李警示提醒');
-}
-
-function clearPackingAlert() {
-  const trip = getCurrentTrip();
-  trip.packingAlertNote = '';
-  saveState();
-  render();
-}
-
-function setPackingMember(memberId) {
-  uiState.packingMemberId = memberId;
-  render();
-}
-
-function addPackingItem(e, memberId, category) {
-  e.preventDefault();
-  const input = document.getElementById(`pk_input_${category}`);
-  const name = (input?.value || '').trim();
-  if (!name) return;
-  const trip = getCurrentTrip();
-  trip.packing = trip.packing || {};
-  trip.packing[memberId] = trip.packing[memberId] || [];
-  trip.packing[memberId].push({
-    id: 'pk_' + Date.now(),
-    category,
-    name,
-    packed: false
-  });
-  saveState();
-  render();
-}
-
-function togglePackingItem(memberId, itemId) {
-  const trip = getCurrentTrip();
-  const item = (trip.packing?.[memberId] || []).find(i => i.id === itemId);
-  if (item) {
-    item.packed = !item.packed;
-    saveState();
-    render();
-  }
-}
-
-function deletePackingItem(memberId, itemId) {
-  const trip = getCurrentTrip();
-  if (trip.packing?.[memberId]) {
-    trip.packing[memberId] = trip.packing[memberId].filter(i => i.id !== itemId);
-    saveState();
-    render();
-  }
-}
-
-function setPocketSearch(q) {
-  uiState.pocketSearch = q;
-  render();
-}
-
-function setPocketTypeFilter(t) {
-  uiState.pocketTypeFilter = t;
-  render();
-}
-
-function submitAddPocket(e) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const trip = getCurrentTrip();
-  trip.pocketList = trip.pocketList || [];
-  trip.pocketList.unshift({
-    id: 'pl_' + Date.now(),
-    type: fd.get('type'),
-    title: fd.get('title'),
-    tag: fd.get('tag') || '',
-    rating: 5.0,
-    priceRange: fd.get('priceRange') || '',
-    mapUrl: fd.get('mapUrl') || `https://maps.google.com/?q=${encodeURIComponent(fd.get('title'))}`,
-    notes: fd.get('notes') || '',
-    status: '想去',
-    images: []
-  });
-  saveState();
-  closeModal();
-  showToast('已加入口袋名單筆記！');
-}
-
-function togglePocketStatus(id) {
-  const trip = getCurrentTrip();
-  const item = (trip.pocketList || []).find(i => i.id === id);
-  if (item) {
-    item.status = item.status === '已去' ? '想去' : '已去';
-    saveState();
-    render();
-  }
-}
-
-function deletePocketItem(id) {
-  const trip = getCurrentTrip();
-  trip.pocketList = (trip.pocketList || []).filter(i => i.id !== id);
-  saveState();
-  render();
-}
-
-function setDocCategoryFilter(c) {
-  uiState.docCategoryFilter = c;
-  render();
-}
-
-function submitAddDoc(e) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const trip = getCurrentTrip();
-  trip.documents = trip.documents || [];
-  trip.documents.unshift({
-    id: 'doc_' + Date.now(),
-    category: (fd.get('category') || '入境資料').trim(),
-    title: fd.get('title'),
-    expiry: fd.get('expiry') || '',
-    note: fd.get('note') || ''
-  });
-  saveState();
-  closeModal();
-  showToast('已新增文件紀錄');
-}
-
-function deleteDoc(id) {
-  const trip = getCurrentTrip();
-  trip.documents = (trip.documents || []).filter(d => d.id !== id);
-  saveState();
-  render();
-}
-
-// 成員操作（含自訂貼上 Emoji、拖移排序）
-function submitAddMember(e) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const trip = getCurrentTrip();
-  const newId = 'm_' + Date.now();
-  const customAvatar = (fd.get('customAvatar') || '').trim();
-  trip.members.push({
-    id: newId,
-    name: fd.get('name'),
-    avatar: customAvatar || fd.get('avatar') || '🐶'
-  });
-  trip.packing = trip.packing || {};
-  trip.packing[newId] = [];
-  saveState();
-  closeModal();
-  showToast('已新增旅伴成員！');
-}
-
-function setMemberCustomAvatar(memberId, avatarStr) {
-  const val = (avatarStr || '').trim();
-  if (!val) return;
-  const trip = getCurrentTrip();
-  const m = trip.members.find(x => x.id === memberId);
-  if (m) {
-    m.avatar = val;
-    saveState();
-    render();
-    showToast('已更新自訂頭像');
-  }
-}
-
-function handleMemberDragStart(idx) {
-  uiState.dragMemberIdx = idx;
-}
-
-function handleMemberDrop(targetIdx) {
-  const fromIdx = uiState.dragMemberIdx;
-  if (fromIdx === null || fromIdx === targetIdx) return;
-  const trip = getCurrentTrip();
-  const [moved] = trip.members.splice(fromIdx, 1);
-  trip.members.splice(targetIdx, 0, moved);
-  uiState.dragMemberIdx = null;
-  saveState();
-  render();
-  showToast('已更新成員排序');
-}
-
-function renameMember(memberId, newName) {
-  if (!newName.trim()) return;
-  const trip = getCurrentTrip();
-  const m = trip.members.find(x => x.id === memberId);
-  if (m) {
-    m.name = newName.trim();
-    saveState();
-    render();
-    showToast('已更新成員暱稱');
-  }
-}
-
-function cycleMemberAvatar(memberId) {
-  const trip = getCurrentTrip();
-  const m = trip.members.find(x => x.id === memberId);
-  if (!m) return;
-  const idx = AVATAR_OPTIONS.indexOf(m.avatar);
-  m.avatar = AVATAR_OPTIONS[(idx + 1) % AVATAR_OPTIONS.length];
-  saveState();
-  render();
-}
-
-function removeMember(memberId) {
-  const trip = getCurrentTrip();
-  if (trip.members.length <= 1) return;
-  trip.members = trip.members.filter(m => m.id !== memberId);
-  saveState();
-  closeModal();
-  showToast('已移除成員');
-}
-
-function escapeHtml(str) {
-  if (str === null || str === undefined) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-render();
-</script>
-</body>
-</html>
-
+            class="w-full bg-white rounded-xl px-3
