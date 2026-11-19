@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>我的旅遊手帳 - Trip Mochi Pro</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -796,8 +796,13 @@ let uiState = {
   weatherData: null,
   weatherLoading: false,
   weatherError: '',
-  foodQuickSpots: ['廣島站・本通', '宮島表參道', '道頓堀・心齋橋'],
-  activeFoodSpot: '廣島站・本通',
+  foodQuickSpots: [
+    { id: 'fspot_1', name: '廣島站・本通', lat: 34.3955, lon: 132.4596 },
+    { id: 'fspot_2', name: '宮島表參道', lat: 34.2965, lon: 132.3198 },
+    { id: 'fspot_3', name: '道頓堀・心齋橋', lat: 34.6687, lon: 135.5013 }
+  ],
+  activeFoodSpotId: 'fspot_1',
+  editingFoodSpotId: null,
   foodResults: [],
   foodLoading: false,
   foodNotice: ''
@@ -1473,15 +1478,110 @@ function locateMeForFood() {
   );
 }
 
+function getActiveFoodSpot() {
+  return uiState.foodQuickSpots.find(s => s.id === uiState.activeFoodSpotId) || uiState.foodQuickSpots[0] || null;
+}
+
+function selectFoodSpotById(spotId) {
+  const spot = uiState.foodQuickSpots.find(s => s.id === spotId);
+  if (!spot) return;
+  uiState.activeFoodSpotId = spot.id;
+  searchFoodByCoords(spot.lat, spot.lon, spot.name);
+}
+
 function selectFoodSpot(spotName) {
-  uiState.activeFoodSpot = spotName;
-  const presetCoords = {
-    '廣島站・本通': [34.3955, 132.4596],
-    '宮島表參道': [34.2965, 132.3198],
-    '道頓堀・心齋橋': [34.6687, 135.5013]
+  const found = uiState.foodQuickSpots.find(s => s.name === spotName);
+  if (found) selectFoodSpotById(found.id);
+}
+
+async function addCustomFoodSpot(e) {
+  e.preventDefault();
+  const nameEl = document.getElementById('custom_food_name');
+  const latEl = document.getElementById('custom_food_lat');
+  const lonEl = document.getElementById('custom_food_lon');
+  const name = (nameEl?.value || '').trim();
+  if (!name) return;
+
+  let lat = parseFloat(latEl?.value);
+  let lon = parseFloat(lonEl?.value);
+
+  if (!isFinite(lat) || !isFinite(lon)) {
+    showToast(`正在搜尋「${name}」座標...`);
+    try {
+      const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=zh&format=json`);
+      const data = await res.json();
+      const place = data?.results?.[0];
+      if (!place) {
+        showToast('找不到該地點座標，請手動輸入緯度與經度', 'error');
+        return;
+      }
+      lat = place.latitude;
+      lon = place.longitude;
+    } catch (err) {
+      showToast('座標查詢失敗，請手動輸入緯度與經度', 'error');
+      return;
+    }
+  }
+
+  const newSpot = {
+    id: 'fspot_' + Date.now(),
+    name,
+    lat,
+    lon
   };
-  const [lat, lon] = presetCoords[spotName] || [34.6687, 135.5013];
-  searchFoodByCoords(lat, lon, spotName);
+  uiState.foodQuickSpots.push(newSpot);
+  uiState.activeFoodSpotId = newSpot.id;
+  nameEl.value = '';
+  if (latEl) latEl.value = '';
+  if (lonEl) lonEl.value = '';
+  await searchFoodByCoords(newSpot.lat, newSpot.lon, newSpot.name);
+  showToast(`已新增美食快捷「${newSpot.name}」`);
+}
+
+function startEditFoodSpot(spotId, event) {
+  event?.stopPropagation();
+  uiState.editingFoodSpotId = spotId;
+  render();
+}
+
+function cancelEditFoodSpot() {
+  uiState.editingFoodSpotId = null;
+  render();
+}
+
+function saveEditFoodSpot(e, spotId) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const name = (fd.get('name') || '').trim();
+  const lat = parseFloat(fd.get('lat'));
+  const lon = parseFloat(fd.get('lon'));
+  if (!name || !isFinite(lat) || !isFinite(lon)) {
+    showToast('請填寫完整名稱與有效經緯度', 'error');
+    return;
+  }
+
+  const target = uiState.foodQuickSpots.find(s => s.id === spotId);
+  if (target) {
+    target.name = name;
+    target.lat = lat;
+    target.lon = lon;
+  }
+  uiState.editingFoodSpotId = null;
+  render();
+  showToast(`已更新快捷地點「${name}」`);
+}
+
+function deleteFoodSpot(spotId, event) {
+  event?.stopPropagation();
+  uiState.foodQuickSpots = uiState.foodQuickSpots.filter(s => s.id !== spotId);
+  if (uiState.activeFoodSpotId === spotId) {
+    uiState.activeFoodSpotId = uiState.foodQuickSpots[0]?.id || null;
+  }
+  if (uiState.editingFoodSpotId === spotId) {
+    uiState.editingFoodSpotId = null;
+  }
+  render();
+  showToast('已刪除快捷地點');
 }
 
 function openNearbyCategoryMap(keyword) {
@@ -1502,7 +1602,9 @@ function renderFoodTab() {
     { label: '最近車站', emoji: '🚉', query: '火車站 地鐵站' }
   ];
 
-  const tabelogUrl = `https://tabelog.com/rstLst/?sw=${encodeURIComponent(uiState.activeFoodSpot || '日本')}&SrtT=rt&srt=trend`;
+  const activeSpot = getActiveFoodSpot();
+  const editingSpot = uiState.foodQuickSpots.find(s => s.id === uiState.editingFoodSpotId) || null;
+  const tabelogUrl = `https://tabelog.com/rstLst/?sw=${encodeURIComponent(activeSpot?.name || '日本')}&SrtT=rt&srt=trend`;
 
   return `
     <div class="px-4 pt-3 space-y-3.5">
@@ -1529,18 +1631,67 @@ function renderFoodTab() {
           <span>使用 GPS 定位搜尋附近美食</span>
         </button>
 
-        <div class="grid grid-cols-3 gap-2">
+        <!-- 預設快捷 + 自定義地點（可選取 / 編輯 / 刪除） -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
           ${uiState.foodQuickSpots.map(spot => {
-            const isSel = uiState.activeFoodSpot === spot;
+            const isSel = spot.id === activeSpot?.id;
             return `
-              <button onclick="selectFoodSpot('${escapeHtml(spot)}')"
-                class="py-2 px-2 rounded-xl text-[11px] font-bold border truncate transition
+              <div role="button" tabindex="0" onclick="selectFoodSpotById('${spot.id}')"
+                class="py-2 px-2.5 rounded-xl text-[11px] font-bold border flex items-center justify-between gap-1 cursor-pointer transition
                 ${isSel ? 'bg-sageLight border-sage text-sageDark' : 'bg-cream text-charcoal border-warmBorder hover:bg-creamDark'}">
-                ${escapeHtml(spot)}
-              </button>
+                <span class="truncate">${escapeHtml(spot.name)}</span>
+                <span class="flex items-center gap-1 shrink-0">
+                  <button type="button" onclick="startEditFoodSpot('${spot.id}', event)"
+                    title="編輯地點" class="text-stone-400 hover:text-sage p-0.5">
+                    <i data-lucide="pencil" class="w-3 h-3"></i>
+                  </button>
+                  <button type="button" onclick="deleteFoodSpot('${spot.id}', event)"
+                    title="刪除地點" class="text-stone-400 hover:text-red-500 p-0.5">
+                    <i data-lucide="x" class="w-3 h-3"></i>
+                  </button>
+                </span>
+              </div>
             `;
           }).join('')}
         </div>
+
+        ${editingSpot ? `
+          <form onsubmit="saveEditFoodSpot(event, '${editingSpot.id}')" class="bg-cream/90 rounded-2xl p-3 border border-sage/40 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-extrabold text-sageDark">✏️ 編輯快捷地點</span>
+              <button type="button" onclick="cancelEditFoodSpot()" class="text-[11px] text-stone-400 hover:text-charcoal">取消</button>
+            </div>
+            <input type="text" name="name" value="${escapeHtml(editingSpot.name)}" required
+              placeholder="地點名稱" class="w-full bg-white rounded-xl px-3 py-1.5 text-xs border border-warmBorder" />
+            <div class="grid grid-cols-2 gap-2">
+              <input type="number" step="any" name="lat" value="${editingSpot.lat}" required
+                placeholder="緯度 lat" class="bg-white rounded-xl px-2.5 py-1.5 text-xs border border-warmBorder font-mono" />
+              <input type="number" step="any" name="lon" value="${editingSpot.lon}" required
+                placeholder="經度 lon" class="bg-white rounded-xl px-2.5 py-1.5 text-xs border border-warmBorder font-mono" />
+            </div>
+            <button type="submit" class="w-full py-2 rounded-xl bg-sage text-white text-xs font-extrabold">
+              儲存修改
+            </button>
+          </form>
+        ` : ''}
+
+        <!-- 新增自定義美食地點 -->
+        <form onsubmit="addCustomFoodSpot(event)" class="space-y-2 pt-0.5">
+          <div class="flex items-center gap-2">
+            <input type="text" id="custom_food_name" placeholder="新增自定義地點（如：福岡天神、札幌薄野、首爾聖水）..."
+              class="flex-1 bg-cream rounded-2xl px-3.5 py-2 text-xs border border-warmBorder focus:outline-none focus:border-sage" />
+            <button type="submit"
+              class="px-3.5 py-2 rounded-2xl bg-charcoal hover:bg-black text-white text-xs font-bold shrink-0">
+              + 新增
+            </button>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <input type="number" step="any" id="custom_food_lat" placeholder="緯度（選填，留空自動查）"
+              class="bg-cream/70 rounded-xl px-3 py-1.5 text-[11px] border border-warmBorder font-mono" />
+            <input type="number" step="any" id="custom_food_lon" placeholder="經度（選填，留空自動查）"
+              class="bg-cream/70 rounded-xl px-3 py-1.5 text-[11px] border border-warmBorder font-mono" />
+          </div>
+        </form>
 
         <div class="bg-[#FFF9EB] border border-amber-200/80 rounded-2xl p-3 flex items-center justify-between gap-2">
           <p class="text-[11px] text-amber-900 leading-snug">
@@ -1553,7 +1704,7 @@ function renderFoodTab() {
         </div>
 
         ${uiState.foodLoading ? `
-          <div class="text-center text-xs text-stone-400 py-3">正在搜尋「${escapeHtml(uiState.activeFoodSpot)}」周邊美食...</div>
+          <div class="text-center text-xs text-stone-400 py-3">正在搜尋「${escapeHtml(activeSpot?.name || '目前地點')}」周邊美食...</div>
         ` : uiState.foodResults.length > 0 ? `
           <div class="space-y-2 pt-1">
             ${uiState.foodResults.map(r => `
