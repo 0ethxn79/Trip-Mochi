@@ -793,6 +793,7 @@ let uiState = {
     { id: 'loc_kansai', name: '大阪・京都', lat: 34.6937, lon: 135.5023 }
   ],
   activeWeatherLocId: 'loc_hiroshima',
+  editingWeatherLocId: null,
   weatherData: null,
   weatherLoading: false,
   weatherError: '',
@@ -1251,18 +1252,19 @@ function locateMeForWeather() {
   navigator.geolocation.getCurrentPosition(
     async (pos) => {
       const { latitude, longitude } = pos.coords;
-      let placeName = '我的定位';
+      let placeName = '目前位置';
       try {
         const gRes = await fetch(`https://geocoding-api.open-meteo.com/v1/reverse?latitude=${latitude}&longitude=${longitude}&language=zh`);
         const gData = await gRes.json();
         const top = gData?.results?.[0];
-        if (top) placeName = `我的定位 · ${top.name}`;
+        if (top) placeName = top.name;
       } catch (e) {}
 
       const gpsLoc = { id: 'loc_gps', name: placeName, lat: latitude, lon: longitude };
       uiState.weatherLocations = [gpsLoc, ...uiState.weatherLocations.filter(x => x.id !== 'loc_gps')];
       uiState.activeWeatherLocId = 'loc_gps';
       await fetchWeatherForLocation(gpsLoc);
+      showToast(`已定位至「${placeName}」`);
     },
     () => {
       uiState.weatherLoading = false;
@@ -1270,6 +1272,79 @@ function locateMeForWeather() {
       render();
     }
   );
+}
+
+function startEditWeatherLocation(locId, event) {
+  event?.stopPropagation();
+  uiState.editingWeatherLocId = locId;
+  render();
+}
+
+function cancelEditWeatherLocation() {
+  uiState.editingWeatherLocId = null;
+  render();
+}
+
+async function saveEditWeatherLocation(e, locId) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const name = (fd.get('name') || '').trim();
+  let lat = parseFloat(fd.get('lat'));
+  let lon = parseFloat(fd.get('lon'));
+  if (!name) return;
+
+  if (!isFinite(lat) || !isFinite(lon)) {
+    try {
+      const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=zh&format=json`);
+      const data = await res.json();
+      const place = data?.results?.[0];
+      if (!place) {
+        showToast('找不到該地點座標，請手動填寫經緯度', 'error');
+        return;
+      }
+      lat = place.latitude;
+      lon = place.longitude;
+    } catch (err) {
+      showToast('座標查詢失敗，請手動輸入經緯度', 'error');
+      return;
+    }
+  }
+
+  const target = uiState.weatherLocations.find(l => l.id === locId);
+  if (target) {
+    target.name = name;
+    target.lat = lat;
+    target.lon = lon;
+  }
+  uiState.editingWeatherLocId = null;
+  if (uiState.activeWeatherLocId === locId && target) {
+    await fetchWeatherForLocation(target);
+  } else {
+    render();
+  }
+  showToast(`已更新天氣地點「${name}」`);
+}
+
+function deleteWeatherLocation(locId, event) {
+  event?.stopPropagation();
+  if (uiState.weatherLocations.length <= 1) {
+    showToast('至少需保留一個天氣地點', 'error');
+    return;
+  }
+  uiState.weatherLocations = uiState.weatherLocations.filter(l => l.id !== locId);
+  if (uiState.editingWeatherLocId === locId) {
+    uiState.editingWeatherLocId = null;
+  }
+  if (uiState.activeWeatherLocId === locId) {
+    const nextLoc = uiState.weatherLocations[0];
+    uiState.activeWeatherLocId = nextLoc?.id || null;
+    if (nextLoc) {
+      fetchWeatherForLocation(nextLoc);
+      return;
+    }
+  }
+  render();
+  showToast('已刪除天氣地點');
 }
 
 async function addManualWeatherLocation(e) {
@@ -1305,6 +1380,7 @@ async function addManualWeatherLocation(e) {
 
 function renderWeatherTab() {
   const activeLoc = uiState.weatherLocations.find(l => l.id === uiState.activeWeatherLocId) || uiState.weatherLocations[0];
+  const editingLoc = uiState.weatherLocations.find(l => l.id === uiState.editingWeatherLocId) || null;
   if (!uiState.weatherData && !uiState.weatherLoading && activeLoc) {
     setTimeout(() => fetchWeatherForLocation(activeLoc, true), 0);
   }
@@ -1320,30 +1396,58 @@ function renderWeatherTab() {
             <span class="text-lg">🌤️</span>
             <h2 class="text-base font-extrabold text-charcoal">當地天氣預報</h2>
           </div>
-          <span class="text-xs font-bold bg-cream text-stone-600 px-3 py-1 rounded-full border border-warmBorder">
-            ${escapeHtml(activeLoc?.name || '未選擇')}
-          </span>
+          <div class="flex items-center gap-1.5">
+            <button type="button" onclick="locateMeForWeather()"
+              class="text-xs font-extrabold bg-terracottaLight hover:bg-orange-100 text-terracotta px-3 py-1 rounded-full border border-orange-200 flex items-center gap-1 transition">
+              <i data-lucide="map-pin" class="w-3 h-3"></i>
+              <span>更新我的定位</span>
+            </button>
+          </div>
         </div>
 
         <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
           ${uiState.weatherLocations.map(loc => {
             const isSel = loc.id === uiState.activeWeatherLocId;
             return `
-              <button onclick="selectWeatherLocation('${loc.id}')"
-                class="shrink-0 px-3.5 py-2 rounded-2xl text-xs font-extrabold flex items-center gap-1.5 border transition
+              <div role="button" tabindex="0" onclick="selectWeatherLocation('${loc.id}')"
+                class="shrink-0 pl-3 pr-2 py-1.5 rounded-2xl text-xs font-extrabold flex items-center gap-1.5 border cursor-pointer transition
                 ${isSel ? 'bg-sage text-white border-sage shadow-sm' : 'bg-cream text-charcoal border-warmBorder hover:bg-creamDark'}">
                 <span>${loc.id === 'loc_gps' ? '📍' : '📌'}</span>
                 <span>${escapeHtml(loc.name)}</span>
-              </button>
+                <span class="flex items-center gap-0.5 ml-0.5">
+                  <button type="button" onclick="startEditWeatherLocation('${loc.id}', event)"
+                    title="編輯地點" class="p-0.5 rounded-full ${isSel ? 'text-white/80 hover:text-white' : 'text-stone-400 hover:text-sage'}">
+                    <i data-lucide="pencil" class="w-3 h-3"></i>
+                  </button>
+                  <button type="button" onclick="deleteWeatherLocation('${loc.id}', event)"
+                    title="刪除地點" class="p-0.5 rounded-full ${isSel ? 'text-white/80 hover:text-white' : 'text-stone-400 hover:text-red-500'}">
+                    <i data-lucide="x" class="w-3 h-3"></i>
+                  </button>
+                </span>
+              </div>
             `;
           }).join('')}
-
-          <button onclick="locateMeForWeather()"
-            class="shrink-0 px-3.5 py-2 rounded-2xl text-xs font-extrabold bg-white hover:bg-sageLight text-charcoal border border-warmBorder flex items-center gap-1 transition">
-            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-terracotta"></i>
-            <span>我的定位</span>
-          </button>
         </div>
+
+        ${editingLoc ? `
+          <form onsubmit="saveEditWeatherLocation(event, '${editingLoc.id}')" class="bg-cream/90 rounded-2xl p-3 border border-sage/40 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-extrabold text-sageDark">✏️ 編輯天氣地點</span>
+              <button type="button" onclick="cancelEditWeatherLocation()" class="text-[11px] text-stone-400 hover:text-charcoal">取消</button>
+            </div>
+            <input type="text" name="name" value="${escapeHtml(editingLoc.name)}" required
+              placeholder="地點名稱" class="w-full bg-white rounded-xl px-3 py-1.5 text-xs border border-warmBorder" />
+            <div class="grid grid-cols-2 gap-2">
+              <input type="number" step="any" name="lat" value="${editingLoc.lat}"
+                placeholder="緯度（留空自動查）" class="bg-white rounded-xl px-2.5 py-1.5 text-xs border border-warmBorder font-mono" />
+              <input type="number" step="any" name="lon" value="${editingLoc.lon}"
+                placeholder="經度（留空自動查）" class="bg-white rounded-xl px-2.5 py-1.5 text-xs border border-warmBorder font-mono" />
+            </div>
+            <button type="submit" class="w-full py-2 rounded-xl bg-sage text-white text-xs font-extrabold">
+              儲存修改並重新抓取天氣
+            </button>
+          </form>
+        ` : ''}
 
         <form onsubmit="addManualWeatherLocation(event)" class="flex items-center gap-2 pt-1">
           <input type="text" id="manual_weather_city" placeholder="手動新增指定位置（如：福岡、札幌、首爾、東京）..."
@@ -4307,27 +4411,22 @@ function renderModalLayer(trip) {
         <div>
           <label class="block text-xs font-bold text-stone-500 mb-1">成員暱稱</label>
           <input type="text" name="name" required placeholder="例如：小美、阿哲"
-            class="w-full bg-white rounded-2xl px-3.5 py-2.5 text-xs border border-warmBorder" />
+            class="w-full bg-white rounded-2xl px-4 py-2.5 text-xs border border-warmBorder" />
         </div>
         <div>
-          <label class="block text-xs font-bold text-stone-500 mb-1">選擇可愛頭像</label>
-          <div class="flex flex-wrap gap-2">
+          <label class="block text-xs font-bold text-stone-500 mb-1.5">選擇可愛頭像</label>
+          <div class="grid grid-cols-6 gap-2">
             ${AVATAR_OPTIONS.map((av, idx) => `
               <label class="cursor-pointer">
-                <input type="radio" name="avatar" value="${av}" ${idx === 0 ? 'checked' : ''} class="peer hidden" />
-                <span class="w-10 h-10 rounded-full bg-white border border-warmBorder peer-checked:border-sage peer-checked:bg-sageLight flex items-center justify-center text-xl">
+                <input type="radio" name="avatar" value="${av}" ${idx === 1 ? 'checked' : ''} class="peer hidden" />
+                <span class="w-10 h-10 rounded-2xl bg-white border border-warmBorder peer-checked:border-sage peer-checked:bg-sageLight flex items-center justify-center text-xl">
                   ${av}
                 </span>
               </label>
             `).join('')}
           </div>
-          <div class="mt-2.5 flex items-center gap-2">
-            <span class="text-xs font-bold text-stone-500">或自訂貼上圖案：</span>
-            <input type="text" name="customAvatar" maxlength="4" placeholder="貼上手機 Emoji (如 🦊)"
-              class="flex-1 bg-white rounded-xl px-3 py-2 text-sm border border-warmBorder" />
-          </div>
         </div>
-        <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage text-white text-xs font-extrabold">確認新增</button>
+        <button type="submit" class="w-full py-3.5 rounded-2xl bg-sage text-white font-extrabold text-xs">加入旅伴</button>
       </form>
     `;
   }
@@ -4336,66 +4435,42 @@ function renderModalLayer(trip) {
     content = `
       <form onsubmit="submitEditTripTitle(event)" class="p-5 space-y-4">
         <div class="flex items-center justify-between">
-          <h3 class="text-base font-extrabold text-charcoal">修改行程標題</h3>
+          <h3 class="text-base font-extrabold text-charcoal">修改行程名稱</h3>
           <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream flex items-center justify-center">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
         <input type="text" name="title" value="${escapeHtml(trip.title)}" required
           class="w-full bg-white rounded-2xl px-4 py-3 text-sm font-bold border border-warmBorder" />
-        <button type="submit" class="w-full py-3 rounded-2xl bg-sage text-white text-xs font-extrabold">儲存標題</button>
+        <button type="submit" class="w-full py-3 rounded-2xl bg-sage text-white font-extrabold text-xs">儲存名稱</button>
       </form>
     `;
   }
 
   return `
     <div onclick="closeModal()" class="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
-      <div onclick="event.stopPropagation()" class="w-full max-w-[460px] bg-[#F5F3EB] rounded-t-3xl sm:rounded-3xl shadow-2xl border border-warmBorder animate-slide-up">
+      <div onclick="event.stopPropagation()" class="w-full max-w-[460px] bg-[#F5F3EB] rounded-t-3xl sm:rounded-3xl shadow-2xl border border-warmBorder overflow-hidden animate-slide-up">
         ${content}
       </div>
     </div>
   `;
 }
 
-function renderSegmentsEditorHtml() {
-  if (!uiState.tempSegments || uiState.tempSegments.length === 0) {
-    return `<div class="text-[11px] text-stone-400 bg-cream/60 rounded-xl p-2.5 text-center">尚無分段轉乘明細，可點右上方「+ 新增轉乘段」</div>`;
-  }
-  return uiState.tempSegments.map((seg, idx) => `
-    <div class="bg-cream rounded-xl p-2.5 border border-warmBorder space-y-1.5 text-xs">
-      <div class="flex items-center justify-between">
-        <span class="font-bold text-sageDark">第 ${idx + 1} 段轉乘</span>
-        <button type="button" onclick="removeTempSegment(${idx})" class="text-[11px] text-red-500 font-bold">刪除</button>
-      </div>
-      <div class="grid grid-cols-2 gap-1.5">
-        <input type="text" value="${escapeHtml(seg.mode || '')}" oninput="updateTempSegment(${idx}, 'mode', this.value)"
-          placeholder="列車/路線 (例: JR山陽本線)" class="bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
-        <input type="text" value="${escapeHtml(seg.time || '')}" oninput="updateTempSegment(${idx}, 'time', this.value)"
-          placeholder="時間 (例: 11:30 - 11:57)" class="bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
-      </div>
-      <div class="grid grid-cols-2 gap-1.5">
-        <input type="text" value="${escapeHtml(seg.from || '')}" oninput="updateTempSegment(${idx}, 'from', this.value)"
-          placeholder="上車站與月台" class="bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
-        <input type="text" value="${escapeHtml(seg.to || '')}" oninput="updateTempSegment(${idx}, 'to', this.value)"
-          placeholder="下車站" class="bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
-      </div>
-      <input type="text" value="${escapeHtml(seg.note || '')}" oninput="updateTempSegment(${idx}, 'note', this.value)"
-        placeholder="轉乘停留時間 / 月台方向備註" class="w-full bg-white rounded-lg px-2 py-1 text-[11px] border border-warmBorder" />
-    </div>
-  `).join('');
-}
-
 function renderLightboxLayer() {
   if (!uiState.lightbox) return '';
   const { images, index } = uiState.lightbox;
-  const src = images[index] || images[0];
+  const currentImg = images[index] || images[0];
+
   return `
-    <div onclick="closeLightbox()" class="fixed inset-0 z-[60] bg-black/90 flex flex-col items-center justify-center p-4 animate-fade-in">
+    <div onclick="closeLightbox()" class="fixed inset-0 z-[80] bg-black/90 flex flex-col items-center justify-center p-4 animate-fade-in">
       <button onclick="closeLightbox()" class="absolute top-5 right-5 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center">
         <i data-lucide="x" class="w-5 h-5"></i>
       </button>
-      <img src="${src}" onclick="event.stopPropagation()" class="max-w-full max-h-[80vh] rounded-2xl object-contain shadow-2xl" />
-      <p class="text-white/70 text-xs mt-4">點擊任意處或右上角關閉 (${index + 1} / ${images.length})</p>
+      <img src="${currentImg}" onclick="event.stopPropagation()"
+        class="max-w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl" />
+      <div class="mt-4 text-white/80 text-xs font-mono">
+        ${index + 1} / ${images.length}
+      </div>
     </div>
   `;
 }
@@ -4404,24 +4479,132 @@ function switchTab(tabId) {
   uiState.activeTab = tabId;
   uiState.swapSourceDayIndex = null;
   render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function setBookingSubTab(st) {
+  uiState.bookingSubTab = st;
+  render();
+}
+
+function setExpenseSubTab(st) {
+  uiState.expenseSubTab = st;
+  render();
+}
+
+function setExpenseFilterMember(mid) {
+  uiState.expenseFilterMember = mid;
+  render();
+}
+
+function setListSubTab(st) {
+  uiState.listSubTab = st;
+  render();
+}
+
+function setPackingMember(mid) {
+  uiState.packingMemberId = mid;
+  render();
+}
+
+function setJournalAuthor(mid) {
+  uiState.activeJournalAuthorId = mid;
+  render();
+}
+
+function setCurrentDeviceUser(mid) {
+  uiState.currentUserId = mid;
+  render();
+}
+
+function toggleTodoComments(todoId) {
+  uiState.expandedTodoComments[todoId] = !uiState.expandedTodoComments[todoId];
+  render();
+}
+
+function setPocketSearch(val) {
+  uiState.pocketSearch = val;
+  render();
+}
+
+function setPocketTypeFilter(t) {
+  uiState.pocketTypeFilter = t;
+  render();
+}
+
+function setDocCategoryFilter(c) {
+  uiState.docCategoryFilter = c;
+  render();
+}
+
+function setItineraryFilter(f) {
+  uiState.itineraryFilter = f;
+  render();
+}
+
+function toggleExpandItem(itemId) {
+  uiState.expandedItems[itemId] = !uiState.expandedItems[itemId];
+  render();
 }
 
 function openModal(type, payload = null) {
-  if (type === 'EDIT_ITEM') {
-    const trip = getCurrentTrip();
-    const existingItem = trip?.days.flatMap(d => d.items).find(i => i.id === payload);
-    uiState.tempSegments = existingItem?.segments ? JSON.parse(JSON.stringify(existingItem.segments)) : [];
-  } else if (type === 'ITEM_FORM') {
-    uiState.tempSegments = [];
-  }
   uiState.modal = { type, payload };
   render();
 }
 
-function openItemFormModal(itemType) {
-  uiState.tempSegments = [];
-  uiState.modal = { type: 'ITEM_FORM', payload: { type: itemType } };
+function openItemFormModal(itemType, existingItem) {
+  uiState.tempSegments = existingItem?.segments ? JSON.parse(JSON.stringify(existingItem.segments)) : [];
+  uiState.modal = { type: 'ITEM_FORM', payload: { type: itemType, item: existingItem } };
   render();
+}
+
+function openAddExpenseModal() {
+  uiState.tempSplitMode = 'EQUAL';
+  openModal('ADD_EXPENSE');
+}
+
+function setTempSplitMode(mode) {
+  uiState.tempSplitMode = mode;
+  render();
+}
+
+function addTempSegment() {
+  uiState.tempSegments.push({ mode: '電車', time: '', from: '', to: '', note: '' });
+  const container = document.getElementById('segments_editor_container');
+  if (container) {
+    container.innerHTML = renderSegmentsEditorHtml();
+  }
+}
+
+function removeTempSegment(idx) {
+  uiState.tempSegments.splice(idx, 1);
+  const container = document.getElementById('segments_editor_container');
+  if (container) {
+    container.innerHTML = renderSegmentsEditorHtml();
+  }
+}
+
+function renderSegmentsEditorHtml() {
+  if (!uiState.tempSegments || uiState.tempSegments.length === 0) {
+    return `<div class="text-[11px] text-stone-400 bg-cream/60 rounded-xl p-2.5 text-center">尚無轉乘段，可點右上方「+ 新增轉乘段」</div>`;
+  }
+  return uiState.tempSegments.map((seg, idx) => `
+    <div class="bg-cream/80 rounded-xl p-2.5 border border-warmBorder space-y-1.5">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-extrabold text-sky-800">第 ${idx + 1} 段</span>
+        <button type="button" onclick="removeTempSegment(${idx})" class="text-[11px] text-red-500 font-bold">移除</button>
+      </div>
+      <div class="grid grid-cols-2 gap-1.5">
+        <input type="text" name="seg_mode_${idx}" value="${escapeHtml(seg.mode || '')}" placeholder="交通工具 (如 JR山陽線)" class="bg-white rounded-lg px-2.5 py-1.5 text-xs border border-warmBorder" />
+        <input type="text" name="seg_time_${idx}" value="${escapeHtml(seg.time || '')}" placeholder="時段 (如 11:30 - 11:57)" class="bg-white rounded-lg px-2.5 py-1.5 text-xs border border-warmBorder" />
+      </div>
+      <div class="grid grid-cols-2 gap-1.5">
+        <input type="text" name="seg_from_${idx}" value="${escapeHtml(seg.from || '')}" placeholder="起點站" class="bg-white rounded-lg px-2.5 py-1.5 text-xs border border-warmBorder" />
+        <input type="text" name="seg_to_${idx}" value="${escapeHtml(seg.to || '')}" placeholder="終點站" class="bg-white rounded-lg px-2.5 py-1.5 text-xs border border-warmBorder" />
+      </div>
+      <input type="text" name="seg_note_${idx}" value="${escapeHtml(seg.note || '')}" placeholder="月台或候船提醒 (選填)" class="w-full bg-white rounded-lg px-2.5 py-1.5 text-xs border border-warmBorder" />
+    </div>
+  `).join('');
 }
 
 function closeModal() {
@@ -4439,265 +4622,6 @@ function closeLightbox() {
   render();
 }
 
-/* ==================== 8 種風格切換與自定義調色函式 ==================== */
-function applyStylePresetById(id) {
-  const preset = STYLE_PRESETS[id];
-  if (!preset) return;
-  applyStyleConfig({ ...preset });
-  render();
-  showToast(`已切換為「${preset.name}」`);
-}
-
-function updateCustomStyleField(key, val) {
-  const cfg = getStyleConfig();
-  cfg[key] = val;
-  if (key === 'shell') cfg.cream = val;
-  applyStyleConfig(cfg);
-  render();
-}
-
-function resetCustomStylePreset() {
-  applyStyleConfig({ ...STYLE_PRESETS.matcha });
-  render();
-  showToast('已還原預設抹茶手帳風格');
-}
-
-function addTempSegment() {
-  uiState.tempSegments.push({ mode: '', time: '', from: '', to: '', note: '' });
-  const container = document.getElementById('segments_editor_container');
-  if (container) container.innerHTML = renderSegmentsEditorHtml();
-}
-
-function removeTempSegment(idx) {
-  uiState.tempSegments.splice(idx, 1);
-  const container = document.getElementById('segments_editor_container');
-  if (container) container.innerHTML = renderSegmentsEditorHtml();
-}
-
-function updateTempSegment(idx, field, val) {
-  if (uiState.tempSegments[idx]) {
-    uiState.tempSegments[idx][field] = val;
-  }
-}
-
-function sortDayItemsByTime() {
-  const trip = getCurrentTrip();
-  const day = trip.days[uiState.activeDayIndex];
-  if (!day) return;
-  day.items.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-  saveState();
-  render();
-  showToast('已依時間先後順序重新排列！');
-}
-
-function convertItemToExpense(itemId) {
-  const trip = getCurrentTrip();
-  let targetItem = null;
-  let targetDate = trip.days[uiState.activeDayIndex]?.date || new Date().toISOString().slice(0, 10);
-
-  trip.days.forEach(d => {
-    const found = d.items.find(i => i.id === itemId);
-    if (found) {
-      targetItem = found;
-      targetDate = d.date;
-    }
-  });
-
-  if (!targetItem) return;
-  const splitMembers = (targetItem.memberIds && targetItem.memberIds.length > 0)
-    ? targetItem.memberIds
-    : trip.members.map(m => m.id);
-  const totalAmount = (Number(targetItem.price) || 0) * Math.max(1, splitMembers.length);
-  const catMap = { FOOD: '餐飲', TRANSPORT: '交通', FLIGHT: '交通', HOTEL: '住宿', SPOT: '景點' };
-
-  trip.expenses = trip.expenses || [];
-  trip.expenses.unshift({
-    id: 'exp_' + Date.now(),
-    date: targetDate,
-    time: targetItem.time || '12:00',
-    method: '現金支付',
-    amount: totalAmount,
-    currency: targetItem.currency || 'JPY',
-    extraFee: !!targetItem.includeTax,
-    category: catMap[targetItem.type] || '景點',
-    title: targetItem.title,
-    payerId: splitMembers[0] || trip.members[0]?.id,
-    splitMode: 'EQUAL',
-    splitMemberIds: splitMembers
-  });
-
-  saveState();
-  showToast(`已將「${targetItem.title}」帶入記帳分帳！`);
-}
-
-function schedulePocketToDay(pocketId, dayIdx) {
-  const trip = getCurrentTrip();
-  const pocket = (trip.pocketList || []).find(p => p.id === pocketId);
-  const targetDay = trip.days[dayIdx];
-  if (!pocket || !targetDay) return;
-
-  const typeMap = { '美食': 'FOOD', '探索景點': 'SPOT', '購物/伴手禮': 'SPOT' };
-  targetDay.items.push({
-    id: 'item_' + Date.now(),
-    type: typeMap[pocket.type] || 'SPOT',
-    time: '12:00',
-    title: pocket.title,
-    location: pocket.title,
-    price: 0,
-    currency: 'JPY',
-    includeTax: false,
-    isPotential: false,
-    memberIds: trip.members.map(m => m.id),
-    notes: pocket.notes || '',
-    images: pocket.images || [],
-    imagePos: 'top',
-    focalY: 50
-  });
-
-  pocket.scheduledDay = dayIdx + 1;
-  uiState.activeDayIndex = dayIdx;
-  saveState();
-  render();
-  showToast(`已將「${pocket.title}」排入 Day ${dayIdx + 1}！`);
-}
-
-function submitCloneTemplate(e, srcTripId) {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const newTitle = fd.get('title');
-  const newStartStr = fd.get('newStartDate');
-  const srcTrip = appState.trips.find(t => t.id === srcTripId);
-  if (!srcTrip || !newStartStr) return;
-
-  const copy = JSON.parse(JSON.stringify(srcTrip));
-  copy.id = 'trip_' + Date.now();
-  copy.code = Math.random().toString(36).substring(2, 8).toUpperCase();
-  copy.title = newTitle;
-
-  const [y, m, d] = newStartStr.split('-').map(Number);
-  const baseDate = new Date(y, m - 1, d);
-  copy.days.forEach((day, idx) => {
-    const dt = new Date(baseDate);
-    dt.setDate(dt.getDate() + idx);
-    day.date = dt.toISOString().slice(0, 10);
-  });
-
-  appState.trips.unshift(copy);
-  appState.activeTripId = copy.id;
-  uiState.activeDayIndex = 0;
-  uiState.modal = null;
-  saveState();
-  render();
-  showToast(`已套用建立「${newTitle}」並平移日期！`);
-}
-
-function exportTripJson() {
-  const trip = getCurrentTrip();
-  if (!trip) return;
-  const payload = {
-    app: 'TripMochiPro',
-    version: 5,
-    exportedAt: new Date().toISOString(),
-    trip
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${trip.title.replace(/[^\w\u4e00-\u9fa5]/g, '_')}_${trip.code}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('已匯出 JSON 備份檔！可傳給旅伴匯入');
-}
-
-function triggerImportJson() {
-  const input = document.getElementById('json_import_file');
-  if (input) {
-    input.value = '';
-    input.click();
-  }
-}
-
-function handleImportJsonFile(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    try {
-      const parsed = JSON.parse(ev.target.result);
-      const importedTrip = parsed.trip || parsed;
-      if (!importedTrip || !Array.isArray(importedTrip.days) || !Array.isArray(importedTrip.members)) {
-        throw new Error('格式不符');
-      }
-      importedTrip.id = 'trip_imp_' + Date.now();
-      importedTrip.code = importedTrip.code || Math.random().toString(36).substring(2, 8).toUpperCase();
-      importedTrip.title = (importedTrip.title || '匯入行程') + ' (已匯入)';
-
-      appState.trips.unshift(importedTrip);
-      appState.activeTripId = importedTrip.id;
-      uiState.activeDayIndex = 0;
-      uiState.activeTab = 'itinerary';
-      uiState.modal = null;
-      saveState();
-      render();
-      showToast('成功匯入行程備份！');
-    } catch (err) {
-      showToast('JSON 檔案格式不正確或已損毀', 'error');
-    }
-  };
-  reader.readAsText(file);
-}
-
-async function fetchLatestRates() {
-  const trip = getCurrentTrip();
-  showToast('正在抓取最新匯率...');
-  try {
-    const res = await fetch('https://open.er-api.com/v6/latest/TWD');
-    const data = await res.json();
-    if (data && data.rates) {
-      const updated = { TWD: 1 };
-      Object.keys(trip.rates || DEFAULT_RATES).forEach(cur => {
-        if (cur === 'TWD') return;
-        const twdPerUnit = data.rates[cur] ? (1 / data.rates[cur]) : null;
-        if (twdPerUnit && isFinite(twdPerUnit)) {
-          updated[cur] = Number(twdPerUnit.toFixed(4));
-        } else {
-          updated[cur] = trip.rates[cur];
-        }
-      });
-      trip.rates = updated;
-      saveState();
-      render();
-      showToast('已更新為最新即時匯率！');
-    } else {
-      throw new Error('無匯率資料');
-    }
-  } catch (e) {
-    showToast('無法連線取得即時匯率，可手動輸入調整', 'error');
-  }
-}
-
-function getPoolBalancesByCurrency(trip) {
-  const balances = { TWD: trip.poolBalance || 0 };
-  (trip.poolLogs || []).forEach(log => {
-    const cur = (log.currency || 'TWD').toUpperCase();
-    if (balances[cur] === undefined) balances[cur] = 0;
-    const amt = Number(log.amount) || 0;
-    balances[cur] += (log.type === 'deposit' ? amt : -amt);
-  });
-  return balances;
-}
-
-function setCurrentDeviceUser(mid) {
-  uiState.currentUserId = mid;
-  render();
-}
-
-function toggleTodoComments(todoId) {
-  uiState.expandedTodoComments[todoId] = !uiState.expandedTodoComments[todoId];
-  render();
-}
-
 function handleDayClick(idx) {
   if (uiState.swapSourceDayIndex !== null) {
     if (uiState.swapSourceDayIndex === idx) {
@@ -4705,9 +4629,7 @@ function handleDayClick(idx) {
       render();
       return;
     }
-    uiState.modal = { type: 'SWAP_DAYS_CONFIRM', payload: { idxA: uiState.swapSourceDayIndex, idxB: idx } };
-    uiState.swapSourceDayIndex = null;
-    render();
+    openModal('SWAP_DAYS_CONFIRM', { idxA: uiState.swapSourceDayIndex, idxB: idx });
     return;
   }
   uiState.activeDayIndex = idx;
@@ -4717,56 +4639,51 @@ function handleDayClick(idx) {
 function toggleSwapMode() {
   if (uiState.swapSourceDayIndex !== null) {
     uiState.swapSourceDayIndex = null;
-    showToast('已取消日期對調');
   } else {
     uiState.swapSourceDayIndex = uiState.activeDayIndex;
-    showToast('請點選想要對調的另一天');
+    showToast('請再點選想要對調的另一天');
   }
   render();
 }
 
 function cancelSwapDays() {
   uiState.swapSourceDayIndex = null;
-  uiState.modal = null;
-  render();
+  closeModal();
 }
 
 function confirmSwapDays(idxA, idxB) {
   const trip = getCurrentTrip();
+  if (!trip) return;
   const dayA = trip.days[idxA];
   const dayB = trip.days[idxB];
+
   const tempItems = dayA.items;
-  const tempEmoji = dayA.themeEmoji;
-  const tempTitle = dayA.themeTitle;
+  const tempThemeTitle = dayA.themeTitle;
+  const tempThemeEmoji = dayA.themeEmoji;
 
   dayA.items = dayB.items;
-  dayA.themeEmoji = dayB.themeEmoji;
   dayA.themeTitle = dayB.themeTitle;
+  dayA.themeEmoji = dayB.themeEmoji;
 
   dayB.items = tempItems;
-  dayB.themeEmoji = tempEmoji;
-  dayB.themeTitle = tempTitle;
+  dayB.themeTitle = tempThemeTitle;
+  dayB.themeEmoji = tempThemeEmoji;
 
-  uiState.modal = null;
+  uiState.swapSourceDayIndex = null;
   uiState.activeDayIndex = idxB;
   saveState();
-  render();
-  showToast(`已對調 Day ${idxA + 1} 與 Day ${idxB + 1} 的行程內容！`);
+  closeModal();
+  showToast(`已對調 Day ${idxA + 1} 與 Day ${idxB + 1} 行程`);
 }
 
 function addNewDay() {
   const trip = getCurrentTrip();
+  if (!trip) return;
   const lastDay = trip.days[trip.days.length - 1];
-  let nextDateStr = '2027-03-25';
-  if (lastDay && lastDay.date) {
-    const [y, m, d] = lastDay.date.split('-').map(Number);
-    const dt = new Date(y, m - 1, d);
-    dt.setDate(dt.getDate() + 1);
-    nextDateStr = dt.toISOString().slice(0, 10);
-  }
+  const nextDate = addDaysStr(lastDay ? lastDay.date : '2027-03-19', 1);
   trip.days.push({
     id: 'd_' + Date.now(),
-    date: nextDateStr,
+    date: nextDate,
     themeEmoji: '📍',
     themeTitle: `第 ${trip.days.length + 1} 天行程`,
     items: []
@@ -4774,17 +4691,16 @@ function addNewDay() {
   uiState.activeDayIndex = trip.days.length - 1;
   saveState();
   render();
-  showToast(`已新增第 ${trip.days.length} 天 (${nextDateStr})`);
+  showToast(`已新增 Day ${trip.days.length} (${nextDate})`);
 }
 
 function confirmDeleteDay(dayIdx) {
   const trip = getCurrentTrip();
-  if (trip.days.length <= 1) return;
+  if (!trip || trip.days.length <= 1) return;
   trip.days.splice(dayIdx, 1);
-  uiState.activeDayIndex = Math.max(0, dayIdx - 1);
-  uiState.modal = null;
+  uiState.activeDayIndex = Math.max(0, Math.min(uiState.activeDayIndex, trip.days.length - 1));
   saveState();
-  render();
+  closeModal();
   showToast('已刪除該天行程');
 }
 
@@ -4792,34 +4708,35 @@ function submitEditDayInfo(e, dayIdx) {
   e.preventDefault();
   const trip = getCurrentTrip();
   const fd = new FormData(e.target);
-  const day = trip.days[dayIdx];
-  day.date = fd.get('date');
-  day.themeEmoji = fd.get('themeEmoji') || '📍';
-  day.themeTitle = fd.get('themeTitle');
-  uiState.modal = null;
+  trip.days[dayIdx].date = fd.get('date');
+  trip.days[dayIdx].themeEmoji = fd.get('themeEmoji') || '📍';
+  trip.days[dayIdx].themeTitle = fd.get('themeTitle').trim();
+  saveState();
+  closeModal();
+  showToast('已更新當日資訊');
+}
+
+function sortDayItemsByTime() {
+  const trip = getCurrentTrip();
+  if (!trip) return;
+  const day = trip.days[uiState.activeDayIndex];
+  if (!day || day.items.length < 2) return;
+  day.items.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
   saveState();
   render();
-  showToast('已更新當日行程資訊');
+  showToast('已依時間先後重新排列當日行程');
 }
 
-function setItineraryFilter(f) {
-  uiState.itineraryFilter = f;
-  render();
-}
-
-function toggleExpandItem(id) {
-  uiState.expandedItems[id] = !uiState.expandedItems[id];
-  render();
-}
-
-function handleItemImageUpload(event) {
-  const file = event.target.files?.[0];
+function handleItemImageUpload(e) {
+  const file = e.target.files?.[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = (ev) => {
-    const input = document.getElementById('item_image_url');
-    if (input) input.value = ev.target.result;
-    showToast('已載入本機圖片');
+    const urlInput = document.getElementById('item_image_url');
+    if (urlInput) {
+      urlInput.value = ev.target.result;
+      showToast('已載入本機圖片');
+    }
   };
   reader.readAsDataURL(file);
 }
@@ -4831,77 +4748,77 @@ function submitItemForm(e, existingId, itemType) {
   const fd = new FormData(e.target);
 
   const memberIds = fd.getAll('memberIds');
-  const imgUrl = (fd.get('imageUrl') || '').trim();
-  const images = imgUrl ? [imgUrl] : [];
+  const imageUrl = (fd.get('imageUrl') || '').trim();
+  const images = imageUrl ? [imageUrl] : [];
 
-  const dataObj = {
+  const segments = [];
+  if (itemType === 'TRANSPORT' && uiState.tempSegments.length > 0) {
+    uiState.tempSegments.forEach((_, idx) => {
+      segments.push({
+        mode: (fd.get(`seg_mode_${idx}`) || '電車').trim(),
+        time: (fd.get(`seg_time_${idx}`) || '').trim(),
+        from: (fd.get(`seg_from_${idx}`) || '').trim(),
+        to: (fd.get(`seg_to_${idx}`) || '').trim(),
+        note: (fd.get(`seg_note_${idx}`) || '').trim()
+      });
+    });
+  }
+
+  const itemData = {
+    id: existingId || ('item_' + Date.now()),
     type: itemType,
     time: fd.get('time') || '09:00',
-    title: fd.get('title'),
-    location: fd.get('location') || '',
-    transitHint: fd.get('transitHint') || '',
+    title: fd.get('title').trim(),
+    location: (fd.get('location') || '').trim(),
+    transitHint: (fd.get('transitHint') || '').trim(),
     price: Number(fd.get('price')) || 0,
     currency: fd.get('currency') || 'JPY',
-    includeTax: fd.get('includeTax') === 'on',
-    isPotential: fd.get('isPotential') === 'on',
+    includeTax: !!fd.get('includeTax'),
+    isPotential: !!fd.get('isPotential'),
     memberIds: memberIds.length > 0 ? memberIds : trip.members.map(m => m.id),
     notes: fd.get('notes') || '',
     images,
     imagePos: fd.get('imagePos') || 'top',
     focalY: 50,
-    isNextDay: fd.get('isNextDay') === 'on'
+    isNextDay: !!fd.get('isNextDay'),
+    airline: (fd.get('airline') || '').trim(),
+    flightNo: (fd.get('flightNo') || '').trim(),
+    depCity: (fd.get('depCity') || '').trim(),
+    depCode: (fd.get('depCode') || '').trim().toUpperCase(),
+    depAirport: (fd.get('depAirport') || '').trim(),
+    depTime: fd.get('time') || '09:00',
+    arrCity: (fd.get('arrCity') || '').trim(),
+    arrCode: (fd.get('arrCode') || '').trim().toUpperCase(),
+    arrAirport: (fd.get('arrAirport') || '').trim(),
+    arrTime: (fd.get('arrTime') || '').trim(),
+    duration: (fd.get('duration') || '').trim(),
+    checkedBag: (fd.get('checkedBag') || '23kg').trim(),
+    carryOnBag: (fd.get('carryOnBag') || '7kg').trim(),
+    layoverCode: (fd.get('layoverCode') || '').trim().toUpperCase(),
+    hasLayover: !!(fd.get('layoverCode') || '').trim(),
+    layoverDuration: (fd.get('layoverDuration') || '').trim(),
+    transportMode: (fd.get('transportMode') || '').trim(),
+    depStation: (fd.get('depStation') || '').trim(),
+    arrStation: (fd.get('arrStation') || '').trim(),
+    passTag: (fd.get('passTag') || '').trim(),
+    passDayInfo: (fd.get('passDayInfo') || '').trim(),
+    segments
   };
-
-  if (itemType === 'FLIGHT') {
-    dataObj.airline = fd.get('airline') || '';
-    dataObj.flightNo = fd.get('flightNo') || '';
-    dataObj.depCity = fd.get('depCity') || '';
-    dataObj.depCode = (fd.get('depCode') || '').toUpperCase();
-    dataObj.depAirport = dataObj.depCity ? `${dataObj.depCity}國際機場` : '';
-    dataObj.depTime = dataObj.time;
-    dataObj.arrCity = fd.get('arrCity') || '';
-    dataObj.arrCode = (fd.get('arrCode') || '').toUpperCase();
-    dataObj.arrAirport = dataObj.arrCity ? `${dataObj.arrCity}機場` : '';
-    dataObj.arrTime = fd.get('arrTime') || '';
-    dataObj.checkedBag = fd.get('checkedBag') || '23kg';
-    dataObj.carryOnBag = fd.get('carryOnBag') || '7kg';
-    dataObj.layoverCode = (fd.get('layoverCode') || '').toUpperCase();
-    dataObj.layoverDuration = fd.get('layoverDuration') || '';
-    dataObj.hasLayover = !!dataObj.layoverCode;
-    dataObj.duration = '直飛';
-  }
-
-  if (itemType === 'TRANSPORT') {
-    dataObj.transportMode = fd.get('transportMode') || '電車';
-    dataObj.depStation = fd.get('depStation') || '';
-    dataObj.arrStation = fd.get('arrStation') || '';
-    dataObj.depTime = dataObj.time;
-    dataObj.arrTime = fd.get('arrTime') || '';
-    dataObj.passTag = fd.get('passTag') || '';
-    dataObj.passDayInfo = fd.get('passDayInfo') || '';
-    dataObj.segments = (uiState.tempSegments || []).filter(s => s.mode || s.from || s.to);
-  }
 
   if (existingId) {
     trip.days.forEach(d => {
       const idx = d.items.findIndex(i => i.id === existingId);
-      if (idx !== -1) {
-        d.items[idx] = { ...d.items[idx], ...dataObj };
-      }
+      if (idx !== -1) d.items[idx] = { ...d.items[idx], ...itemData };
     });
     showToast('已更新行程項目');
   } else {
-    day.items.push({
-      id: 'item_' + Date.now(),
-      ...dataObj
-    });
+    day.items.push(itemData);
     showToast(`已新增${ITEM_TYPES[itemType]?.label || '項目'}`);
   }
 
-  uiState.modal = null;
   uiState.tempSegments = [];
   saveState();
-  render();
+  closeModal();
 }
 
 function deleteItineraryItem(itemId) {
@@ -4909,54 +4826,52 @@ function deleteItineraryItem(itemId) {
   trip.days.forEach(d => {
     d.items = d.items.filter(i => i.id !== itemId);
   });
-  uiState.modal = null;
   saveState();
-  render();
+  closeModal();
   showToast('已刪除項目');
 }
 
-function generatePlainTextItinerary(trip, allDays) {
-  const daysToExport = allDays ? trip.days : [trip.days[uiState.activeDayIndex] || trip.days[0]];
-  let lines = [`【${trip.title}】`, `行程碼：${trip.code}`, ''];
-
-  daysToExport.forEach((day, idx) => {
-    const dayNum = allDays ? idx + 1 : uiState.activeDayIndex + 1;
-    const { md, weekday } = formatDateParts(day.date);
-    lines.push(`📅 Day ${dayNum} (${md} ${weekday}) ${day.themeEmoji || ''} ${day.themeTitle || ''}`);
-    if (day.items.length === 0) {
-      lines.push('  ・自由活動');
-    } else {
-      day.items.forEach(it => {
-        lines.push(`  ${it.time} ${it.title}${it.location ? ` @ ${it.location}` : ''}`);
-        if (it.notes) lines.push(`     ↳ ${it.notes.trim().replace(/\n+/g, ' / ')}`);
-      });
+function convertItemToExpense(itemId) {
+  const trip = getCurrentTrip();
+  if (!trip) return;
+  let foundItem = null;
+  let foundDate = trip.days[uiState.activeDayIndex]?.date || '2027-03-19';
+  trip.days.forEach(d => {
+    const it = d.items.find(x => x.id === itemId);
+    if (it) {
+      foundItem = it;
+      foundDate = d.date;
     }
-    lines.push('');
+  });
+  if (!foundItem) return;
+
+  const participants = (foundItem.memberIds && foundItem.memberIds.length > 0)
+    ? foundItem.memberIds
+    : trip.members.map(m => m.id);
+  const totalOrig = (Number(foundItem.price) || 0) * Math.max(1, participants.length);
+
+  const catMap = { SPOT: '景點', FOOD: '餐飲', TRANSPORT: '交通', HOTEL: '住宿', FLIGHT: '交通' };
+  trip.expenses = trip.expenses || [];
+  trip.expenses.unshift({
+    id: 'exp_' + Date.now(),
+    date: foundDate,
+    amount: totalOrig,
+    currency: foundItem.currency || 'JPY',
+    extraFee: !!foundItem.includeTax,
+    method: '現金支付',
+    category: catMap[foundItem.type] || '其他',
+    title: foundItem.title,
+    payerId: trip.members[0]?.id || 'm1',
+    splitMode: 'EQUAL',
+    splitMemberIds: participants,
+    customSplits: {}
   });
 
-  return lines.join('\n').trim();
-}
-
-function copyShareText() {
-  const box = document.getElementById('share_text_box');
-  if (!box) return;
-  navigator.clipboard?.writeText(box.value).then(() => {
-    showToast('已複製純文字行程，可直接貼到 LINE！');
-  }).catch(() => {
-    box.select();
-    document.execCommand('copy');
-    showToast('已複製純文字行程！');
-  });
-}
-
-function setBookingSubTab(st) { uiState.bookingSubTab = st; render(); }
-function setExpenseSubTab(st) { uiState.expenseSubTab = st; render(); }
-function setExpenseFilterMember(mid) { uiState.expenseFilterMember = mid; render(); }
-function setTempSplitMode(mode) { uiState.tempSplitMode = mode; render(); }
-
-function openAddExpenseModal() {
-  uiState.tempSplitMode = 'EQUAL';
-  openModal('ADD_EXPENSE');
+  saveState();
+  uiState.activeTab = 'expenses';
+  uiState.expenseSubTab = 'SPLIT';
+  render();
+  showToast(`已將「${foundItem.title}」帶入記帳分帳！`);
 }
 
 function submitAddExpense(e) {
@@ -4964,47 +4879,46 @@ function submitAddExpense(e) {
   const trip = getCurrentTrip();
   const fd = new FormData(e.target);
   const splitMode = uiState.tempSplitMode || 'EQUAL';
-  let amount = Number(fd.get('amount')) || 0;
-  let customSplits = null;
+  const splitMemberIds = fd.getAll('splitMemberIds');
 
+  const customSplits = {};
+  let customSum = 0;
   if (splitMode === 'CUSTOM') {
-    customSplits = {};
-    let sumCustom = 0;
     trip.members.forEach(m => {
-      const val = Number(fd.get('customSplit_' + m.id)) || 0;
+      const val = Number(fd.get(`customSplit_${m.id}`)) || 0;
       customSplits[m.id] = val;
-      sumCustom += val;
+      customSum += val;
     });
-    if (amount <= 0 && sumCustom > 0) amount = sumCustom;
   }
+
+  const rawAmount = Number(fd.get('amount')) || 0;
+  const finalAmount = splitMode === 'CUSTOM' && customSum > 0 ? customSum : rawAmount;
 
   trip.expenses = trip.expenses || [];
   trip.expenses.unshift({
     id: 'exp_' + Date.now(),
     date: fd.get('date'),
-    time: new Date().toTimeString().slice(0, 5),
-    method: fd.get('method'),
-    amount,
-    currency: fd.get('currency'),
-    extraFee: fd.get('extraFee') === 'on',
+    amount: finalAmount,
+    currency: fd.get('currency') || 'JPY',
+    extraFee: !!fd.get('extraFee'),
+    method: fd.get('method') || '現金支付',
     category: fd.get('category') || '餐飲',
-    title: fd.get('title'),
+    title: fd.get('title').trim(),
     payerId: fd.get('payerId'),
     splitMode,
-    splitMemberIds: fd.getAll('splitMemberIds'),
+    splitMemberIds: splitMemberIds.length > 0 ? splitMemberIds : trip.members.map(m => m.id),
     customSplits
   });
 
-  uiState.modal = null;
   uiState.tempSplitMode = 'EQUAL';
   saveState();
-  render();
+  closeModal();
   showToast('已新增支出紀錄');
 }
 
 function deleteExpense(expId) {
   const trip = getCurrentTrip();
-  trip.expenses = (trip.expenses || []).filter(x => x.id !== expId);
+  trip.expenses = (trip.expenses || []).filter(e => e.id !== expId);
   saveState();
   render();
   showToast('已刪除支出');
@@ -5014,27 +4928,50 @@ function submitAddCashExchange(e) {
   e.preventDefault();
   const trip = getCurrentTrip();
   const fd = new FormData(e.target);
+  const cur = (fd.get('currency') || 'JPY').trim().toUpperCase();
+  const foreignAmount = Number(fd.get('foreignAmount')) || 0;
+  const twdCost = Number(fd.get('twdCost')) || 0;
+
+  if (cur && foreignAmount > 0 && twdCost > 0) {
+    trip.rates = trip.rates || { ...DEFAULT_RATES };
+    trip.rates[cur] = Number((twdCost / foreignAmount).toFixed(4));
+  }
+
   trip.cashExchanges = trip.cashExchanges || [];
   trip.cashExchanges.unshift({
     id: 'ce_' + Date.now(),
     date: fd.get('date'),
-    currency: (fd.get('currency') || 'JPY').toUpperCase(),
-    foreignAmount: Number(fd.get('foreignAmount')) || 0,
-    twdCost: Number(fd.get('twdCost')) || 0,
-    note: fd.get('note') || ''
+    currency: cur,
+    foreignAmount,
+    twdCost,
+    note: (fd.get('note') || '').trim()
   });
-  uiState.modal = null;
+
   saveState();
-  render();
-  showToast('已登記外幣現鈔');
+  closeModal();
+  showToast(`已登記 ${cur} ${foreignAmount.toLocaleString()} 外幣現鈔`);
 }
 
 function deleteCashExchange(id) {
   const trip = getCurrentTrip();
-  trip.cashExchanges = (trip.cashExchanges || []).filter(c => c.id !== id);
+  trip.cashExchanges = (trip.cashExchanges || []).filter(x => x.id !== id);
   saveState();
   render();
   showToast('已刪除換匯紀錄');
+}
+
+function getPoolBalancesByCurrency(trip) {
+  const map = {};
+  (trip.poolLogs || []).forEach(log => {
+    const cur = (log.currency || 'TWD').toUpperCase();
+    if (!map[cur]) map[cur] = 0;
+    const amt = Number(log.amount) || 0;
+    map[cur] += log.type === 'deposit' ? amt : -amt;
+  });
+  if (Object.keys(map).length === 0) {
+    map.TWD = Number(trip.poolBalance) || 0;
+  }
+  return map;
 }
 
 function submitPoolAction(e, actionType) {
@@ -5042,38 +4979,35 @@ function submitPoolAction(e, actionType) {
   const trip = getCurrentTrip();
   const fd = new FormData(e.target);
   const amount = Number(fd.get('amount')) || 0;
-  const currency = (fd.get('currency') || 'TWD').toUpperCase();
-  const keeper = fd.get('keeper') || '';
+  const currency = (fd.get('currency') || 'TWD').trim().toUpperCase();
   if (amount <= 0) return;
 
-  if (currency === 'TWD') {
-    trip.poolBalance = (trip.poolBalance || 0) + (actionType === 'deposit' ? amount : -amount);
-  }
   trip.poolLogs = trip.poolLogs || [];
   trip.poolLogs.unshift({
     id: 'pl_' + Date.now(),
     type: actionType,
-    title: fd.get('title'),
+    title: fd.get('title').trim(),
     amount,
     currency,
-    keeper,
+    keeper: fd.get('keeper') || '',
     date: new Date().toISOString().slice(0, 10)
   });
 
-  uiState.modal = null;
+  if (currency === 'TWD') {
+    trip.poolBalance = (Number(trip.poolBalance) || 0) + (actionType === 'deposit' ? amount : -amount);
+  }
   saveState();
-  render();
-  showToast(actionType === 'deposit' ? '已入金至公費' : '已紀錄公費支出');
+  closeModal();
+  showToast(actionType === 'deposit' ? '公費入金成功' : '已紀錄公費支出');
 }
 
 function submitPackingAlert(e) {
   e.preventDefault();
   const trip = getCurrentTrip();
   const fd = new FormData(e.target);
-  trip.packingAlertNote = fd.get('alertNote') || '';
-  uiState.modal = null;
+  trip.packingAlertNote = (fd.get('alertNote') || '').trim();
   saveState();
-  render();
+  closeModal();
   showToast('已更新行李警示提醒');
 }
 
@@ -5084,8 +5018,6 @@ function clearPackingAlert() {
   render();
 }
 
-function setJournalAuthor(mid) { uiState.activeJournalAuthorId = mid; render(); }
-
 function submitAddJournal(e) {
   e.preventDefault();
   const trip = getCurrentTrip();
@@ -5094,53 +5026,53 @@ function submitAddJournal(e) {
   trip.journals.unshift({
     id: 'j_' + Date.now(),
     authorId: fd.get('authorId'),
-    date: new Date().toLocaleString('zh-TW', { hour12: false }),
-    title: fd.get('title'),
-    content: fd.get('content'),
+    date: new Date().toLocaleString('zh-TW', { hour12: false }).slice(0, 16),
+    title: fd.get('title').trim(),
+    content: fd.get('content').trim(),
     image: (fd.get('image') || '').trim(),
     comments: []
   });
-  uiState.modal = null;
   saveState();
-  render();
-  showToast('已發佈旅行日誌！');
+  closeModal();
+  showToast('已發佈旅行日誌');
 }
 
-function submitEditJournal(e, jId) {
+function submitEditJournal(e, journalId) {
   e.preventDefault();
   const trip = getCurrentTrip();
   const fd = new FormData(e.target);
-  const j = (trip.journals || []).find(item => item.id === jId);
-  if (!j) return;
-  j.title = fd.get('title');
-  j.content = fd.get('content');
-  j.image = (fd.get('image') || '').trim();
-  uiState.modal = null;
+  const j = (trip.journals || []).find(item => item.id === journalId);
+  if (j) {
+    j.title = fd.get('title').trim();
+    j.content = fd.get('content').trim();
+    j.image = (fd.get('image') || '').trim();
+  }
   saveState();
-  render();
+  closeModal();
   showToast('已更新旅行日誌');
 }
 
-function deleteJournal(jId) {
+function deleteJournal(journalId) {
   const trip = getCurrentTrip();
-  trip.journals = (trip.journals || []).filter(j => j.id !== jId);
+  trip.journals = (trip.journals || []).filter(j => j.id !== journalId);
   saveState();
   render();
   showToast('已刪除日誌');
 }
 
-function submitJournalComment(e, jId) {
+function submitJournalComment(e, journalId) {
   e.preventDefault();
-  const input = document.getElementById('j_comment_' + jId);
+  const trip = getCurrentTrip();
+  const input = document.getElementById(`j_comment_${journalId}`);
   const text = (input?.value || '').trim();
   if (!text) return;
-  const trip = getCurrentTrip();
-  const journal = (trip.journals || []).find(j => j.id === jId);
-  if (!journal) return;
-  journal.comments = journal.comments || [];
-  journal.comments.push({
+
+  const j = (trip.journals || []).find(item => item.id === journalId);
+  if (!j) return;
+  j.comments = j.comments || [];
+  j.comments.push({
     id: 'jc_' + Date.now(),
-    memberId: uiState.activeJournalAuthorId || trip.members[0]?.id,
+    memberId: uiState.activeJournalAuthorId || trip.members[0].id,
     text,
     time: new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })
   });
@@ -5148,22 +5080,22 @@ function submitJournalComment(e, jId) {
   render();
 }
 
-function setListSubTab(st) { uiState.listSubTab = st; render(); }
-function setPackingMember(mid) { uiState.packingMemberId = mid; render(); }
-
 function addTodoItem(e) {
   e.preventDefault();
+  const trip = getCurrentTrip();
   const input = document.getElementById('new_todo_input');
   const title = (input?.value || '').trim();
   if (!title) return;
-  const trip = getCurrentTrip();
+
   const fd = new FormData(e.target);
-  const assignees = fd.getAll('todoAssignees');
+  const checkedAssignees = fd.getAll('todoAssignees');
+  const assignedTo = checkedAssignees.length > 0 ? checkedAssignees : trip.members.map(m => m.id);
+
   trip.todos = trip.todos || [];
-  trip.todos.unshift({
+  trip.todos.push({
     id: 'td_' + Date.now(),
     title,
-    assignedTo: assignees.length > 0 ? assignees : trip.members.map(m => m.id),
+    assignedTo,
     completedBy: [],
     comments: []
   });
@@ -5188,15 +5120,17 @@ function toggleTodoMember(todoId, memberId) {
 
 function addTodoComment(e, todoId) {
   e.preventDefault();
-  const input = document.getElementById('todo_comment_' + todoId);
+  const trip = getCurrentTrip();
+  const input = document.getElementById(`todo_comment_${todoId}`);
   const text = (input?.value || '').trim();
   if (!text) return;
-  const trip = getCurrentTrip();
+
   const todo = (trip.todos || []).find(t => t.id === todoId);
   if (!todo) return;
   todo.comments = todo.comments || [];
   todo.comments.push({
-    memberId: uiState.currentUserId || trip.members[0]?.id,
+    id: 'tdc_' + Date.now(),
+    memberId: uiState.currentUserId || trip.members[0].id,
     text,
     time: new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })
   });
@@ -5214,9 +5148,10 @@ function deleteTodo(todoId) {
 
 function addPackingItem(e, memberId, category) {
   e.preventDefault();
-  const input = document.getElementById('pk_input_' + category);
+  const input = document.getElementById(`pk_input_${category}`);
   const name = (input?.value || '').trim();
   if (!name) return;
+
   const trip = getCurrentTrip();
   trip.packing = trip.packing || {};
   trip.packing[memberId] = trip.packing[memberId] || [];
@@ -5247,10 +5182,6 @@ function deletePackingItem(memberId, itemId) {
   render();
 }
 
-function setPocketSearch(val) { uiState.pocketSearch = val; render(); }
-function setPocketTypeFilter(t) { uiState.pocketTypeFilter = t; render(); }
-function setDocCategoryFilter(c) { uiState.docCategoryFilter = c; render(); }
-
 function submitAddPocket(e) {
   e.preventDefault();
   const trip = getCurrentTrip();
@@ -5259,17 +5190,16 @@ function submitAddPocket(e) {
   trip.pocketList.unshift({
     id: 'pl_' + Date.now(),
     type: fd.get('type') || '美食',
-    title: fd.get('title'),
-    tag: fd.get('tag') || '',
-    priceRange: fd.get('priceRange') || '',
-    mapUrl: fd.get('mapUrl') || '',
-    notes: fd.get('notes') || '',
+    title: fd.get('title').trim(),
+    tag: (fd.get('tag') || '').trim(),
+    priceRange: (fd.get('priceRange') || '').trim(),
+    mapUrl: (fd.get('mapUrl') || '').trim(),
+    notes: (fd.get('notes') || '').trim(),
     status: '想去',
-    images: []
+    scheduledDay: null
   });
-  uiState.modal = null;
   saveState();
-  render();
+  closeModal();
   showToast('已加入口袋名單');
 }
 
@@ -5279,6 +5209,39 @@ function togglePocketStatus(id) {
   if (item) item.status = item.status === '已去' ? '想去' : '已去';
   saveState();
   render();
+}
+
+function schedulePocketToDay(pocketId, dayIdx) {
+  const trip = getCurrentTrip();
+  if (!trip || !trip.days[dayIdx]) return;
+  const pocket = (trip.pocketList || []).find(p => p.id === pocketId);
+  if (!pocket) return;
+
+  const typeMap = { '美食': 'FOOD', '探索景點': 'SPOT', '購物/伴手禮': 'SPOT' };
+  const newItem = {
+    id: 'item_' + Date.now(),
+    type: typeMap[pocket.type] || 'SPOT',
+    time: '12:00',
+    title: pocket.title,
+    location: pocket.title,
+    price: 0,
+    currency: 'JPY',
+    includeTax: false,
+    isPotential: false,
+    memberIds: trip.members.map(m => m.id),
+    notes: [pocket.tag ? `標籤：${pocket.tag}` : '', pocket.priceRange ? `預算：${pocket.priceRange}` : '', pocket.notes || ''].filter(Boolean).join('\n'),
+    images: [],
+    imagePos: 'top',
+    focalY: 50
+  };
+
+  trip.days[dayIdx].items.push(newItem);
+  pocket.scheduledDay = dayIdx + 1;
+  saveState();
+  uiState.activeTab = 'itinerary';
+  uiState.activeDayIndex = dayIdx;
+  render();
+  showToast(`已將「${pocket.title}」排入 Day ${dayIdx + 1}！`);
 }
 
 function deletePocketItem(id) {
@@ -5296,14 +5259,13 @@ function submitAddDoc(e) {
   trip.documents.unshift({
     id: 'doc_' + Date.now(),
     category: (fd.get('category') || '入境資料').trim(),
-    title: fd.get('title'),
+    title: fd.get('title').trim(),
     expiry: fd.get('expiry') || '',
-    note: fd.get('note') || ''
+    note: (fd.get('note') || '').trim()
   });
-  uiState.modal = null;
   saveState();
-  render();
-  showToast('已新增文件紀錄');
+  closeModal();
+  showToast('已儲存文件資料');
 }
 
 function deleteDoc(id) {
@@ -5313,12 +5275,14 @@ function deleteDoc(id) {
   render();
 }
 
-function handleMemberDragStart(idx) { uiState.dragMemberIdx = idx; }
+function handleMemberDragStart(idx) {
+  uiState.dragMemberIdx = idx;
+}
 
 function handleMemberDrop(targetIdx) {
+  const trip = getCurrentTrip();
   const fromIdx = uiState.dragMemberIdx;
   if (fromIdx === null || fromIdx === targetIdx) return;
-  const trip = getCurrentTrip();
   const [moved] = trip.members.splice(fromIdx, 1);
   trip.members.splice(targetIdx, 0, moved);
   uiState.dragMemberIdx = null;
@@ -5327,9 +5291,26 @@ function handleMemberDrop(targetIdx) {
   showToast('已更新成員排序');
 }
 
-function renameMember(mid, newName) {
+function submitAddMember(e) {
+  e.preventDefault();
   const trip = getCurrentTrip();
-  const m = trip.members.find(x => x.id === mid);
+  const fd = new FormData(e.target);
+  const newId = 'm_' + Date.now();
+  trip.members.push({
+    id: newId,
+    name: fd.get('name').trim(),
+    avatar: fd.get('avatar') || '🐱'
+  });
+  trip.packing = trip.packing || {};
+  trip.packing[newId] = [];
+  saveState();
+  closeModal();
+  showToast('已新增旅伴成員');
+}
+
+function renameMember(memberId, newName) {
+  const trip = getCurrentTrip();
+  const m = trip.members.find(x => x.id === memberId);
   if (m && newName.trim()) {
     m.name = newName.trim();
     saveState();
@@ -5338,20 +5319,21 @@ function renameMember(mid, newName) {
   }
 }
 
-function setMemberCustomAvatar(mid, emojiVal) {
+function setMemberCustomAvatar(memberId, emojiVal) {
   const trip = getCurrentTrip();
-  const m = trip.members.find(x => x.id === mid);
-  if (m && emojiVal.trim()) {
-    m.avatar = emojiVal.trim();
+  const m = trip.members.find(x => x.id === memberId);
+  const clean = (emojiVal || '').trim();
+  if (m && clean) {
+    m.avatar = clean;
     saveState();
     render();
-    showToast('已更換成員頭像');
+    showToast('已更新成員頭像');
   }
 }
 
-function cycleMemberAvatar(mid) {
+function cycleMemberAvatar(memberId) {
   const trip = getCurrentTrip();
-  const m = trip.members.find(x => x.id === mid);
+  const m = trip.members.find(x => x.id === memberId);
   if (!m) return;
   const idx = AVATAR_OPTIONS.indexOf(m.avatar);
   m.avatar = AVATAR_OPTIONS[(idx + 1) % AVATAR_OPTIONS.length];
@@ -5359,31 +5341,12 @@ function cycleMemberAvatar(mid) {
   render();
 }
 
-function submitAddMember(e) {
-  e.preventDefault();
-  const trip = getCurrentTrip();
-  const fd = new FormData(e.target);
-  const name = (fd.get('name') || '').trim();
-  if (!name) return;
-  const customAv = (fd.get('customAvatar') || '').trim();
-  const avatar = customAv || fd.get('avatar') || '🐼';
-  const newId = 'm_' + Date.now();
-  trip.members.push({ id: newId, name, avatar });
-  trip.packing = trip.packing || {};
-  trip.packing[newId] = [];
-  uiState.modal = null;
-  saveState();
-  render();
-  showToast(`已新增成員「${name}」`);
-}
-
-function removeMember(mid) {
+function removeMember(memberId) {
   const trip = getCurrentTrip();
   if (trip.members.length <= 1) return;
-  trip.members = trip.members.filter(m => m.id !== mid);
-  uiState.modal = null;
+  trip.members = trip.members.filter(m => m.id !== memberId);
   saveState();
-  render();
+  closeModal();
   showToast('已移除成員');
 }
 
@@ -5391,23 +5354,18 @@ function submitEditTripTitle(e) {
   e.preventDefault();
   const trip = getCurrentTrip();
   const fd = new FormData(e.target);
-  const title = (fd.get('title') || '').trim();
-  if (title) {
-    trip.title = title;
-    uiState.modal = null;
-    saveState();
-    render();
-    showToast('已更新行程標題');
-  }
+  trip.title = fd.get('title').trim();
+  saveState();
+  closeModal();
+  showToast('已更新行程名稱');
 }
 
 function selectTrip(tripId) {
   appState.activeTripId = tripId;
   uiState.activeDayIndex = 0;
-  uiState.activeTab = 'itinerary';
-  uiState.modal = null;
+  uiState.swapSourceDayIndex = null;
   saveState();
-  render();
+  closeModal();
 }
 
 function deleteTrip(tripId) {
@@ -5417,7 +5375,7 @@ function deleteTrip(tripId) {
   }
   saveState();
   render();
-  showToast('已刪除行程');
+  showToast('已刪除該行程');
 }
 
 function joinTripByCode(e) {
@@ -5428,30 +5386,25 @@ function joinTripByCode(e) {
   const found = appState.trips.find(t => t.code.toUpperCase() === code);
   if (found) {
     selectTrip(found.id);
-    showToast(`已切換至行程「${found.title}」`);
+    showToast(`已切換至行程：${found.title}`);
   } else {
-    showToast(`找不到行程碼「${code}」`, 'error');
+    showToast('找不到該行程碼，請確認或建立新行程', 'error');
   }
 }
 
 function submitCreateTrip(e) {
   e.preventDefault();
   const fd = new FormData(e.target);
-  const title = (fd.get('title') || '').trim();
-  const startDate = fd.get('startDate') || '2027-03-19';
+  const title = fd.get('title').trim();
+  const startDate = fd.get('startDate');
   const daysCount = Math.max(1, Math.min(30, Number(fd.get('daysCount')) || 5));
-  if (!title) return;
 
-  const [y, m, d] = startDate.split('-').map(Number);
-  const base = new Date(y, m - 1, d);
   const days = [];
   for (let i = 0; i < daysCount; i++) {
-    const dt = new Date(base);
-    dt.setDate(dt.getDate() + i);
     days.push({
       id: 'd_' + Date.now() + '_' + i,
-      date: dt.toISOString().slice(0, 10),
-      themeEmoji: i === 0 ? '✈️' : '📍',
+      date: addDaysStr(startDate, i),
+      themeEmoji: '📍',
       themeTitle: `第 ${i + 1} 天行程`,
       items: []
     });
@@ -5469,7 +5422,9 @@ function submitCreateTrip(e) {
     days,
     expenses: [],
     journals: [],
-    todos: [],
+    todos: [
+      { id: 'td_' + Date.now(), title: '確認護照效期與機票', assignedTo: ['m1'], completedBy: [], comments: [] }
+    ],
     packing: { m1: [] },
     packingAlertNote: '',
     pocketList: [],
@@ -5479,22 +5434,173 @@ function submitCreateTrip(e) {
   appState.trips.unshift(newTrip);
   appState.activeTripId = newTrip.id;
   uiState.activeDayIndex = 0;
-  uiState.activeTab = 'itinerary';
-  uiState.modal = null;
   saveState();
+  closeModal();
+  showToast(`已建立「${title}」`);
+}
+
+function submitCloneTemplate(e, srcTripId) {
+  e.preventDefault();
+  const src = appState.trips.find(t => t.id === srcTripId) || appState.trips[0];
+  if (!src) return;
+  const fd = new FormData(e.target);
+  const newTitle = (fd.get('title') || '').trim() || `${src.title} (副本)`;
+  const newStartDate = fd.get('newStartDate') || src.days?.[0]?.date || '2027-03-19';
+
+  const cloned = JSON.parse(JSON.stringify(src));
+  const stamp = Date.now();
+  cloned.id = 'trip_' + stamp;
+  cloned.code = Math.random().toString(36).substring(2, 8).toUpperCase();
+  cloned.title = newTitle;
+
+  cloned.days = (cloned.days || []).map((d, idx) => ({
+    ...d,
+    id: `d_${stamp}_${idx}`,
+    date: addDaysStr(newStartDate, idx),
+    items: (d.items || []).map((it, iIdx) => ({
+      ...it,
+      id: `item_${stamp}_${idx}_${iIdx}`
+    }))
+  }));
+
+  appState.trips.unshift(cloned);
+  appState.activeTripId = cloned.id;
+  uiState.activeDayIndex = 0;
+  saveState();
+  closeModal();
+  showToast(`已套用建立「${newTitle}」，日期已自動平移！`);
+}
+
+function applyStylePresetById(presetId) {
+  const preset = STYLE_PRESETS[presetId];
+  if (!preset) return;
+  const cfg = { ...preset };
+  applyStyleConfig(cfg);
   render();
-  showToast(`已建立「${title}」！`);
+  showToast(`已套用 ${preset.name}`);
+}
+
+function updateCustomStyleField(field, hexVal) {
+  const cfg = getStyleConfig();
+  cfg.id = 'custom';
+  cfg.name = '🎨 自定義風格';
+  cfg[field] = hexVal;
+  if (field === 'accent') {
+    cfg.accentLight = hexVal + '24';
+  }
+  applyStyleConfig(cfg);
+  render();
+}
+
+function resetCustomStylePreset() {
+  applyStyleConfig({ ...STYLE_PRESETS.matcha });
+  render();
+  showToast('已還原預設抹茶手帳風格');
+}
+
+function exportTripJson() {
+  const trip = getCurrentTrip();
+  const dataToExport = trip ? {
+    exportedAt: new Date().toISOString(),
+    app: 'Trip Mochi Pro',
+    trip,
+    allTrips: appState.trips
+  } : {
+    exportedAt: new Date().toISOString(),
+    app: 'Trip Mochi Pro',
+    allTrips: appState.trips
+  };
+
+  const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const safeName = (trip?.title || 'TripMochi').replace(/[^\w\u4e00-\u9fa5-]/g, '_');
+  a.href = url;
+  a.download = `${safeName}_${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('已匯出 JSON 備份檔，可傳給旅伴匯入！');
+}
+
+function triggerImportJson() {
+  const fileEl = document.getElementById('json_import_file');
+  if (fileEl) {
+    fileEl.value = '';
+    fileEl.click();
+  }
+}
+
+function handleImportJsonFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const parsed = JSON.parse(ev.target.result);
+      let importedTrips = [];
+      if (parsed.trip && parsed.trip.days) {
+        importedTrips = [parsed.trip];
+      } else if (Array.isArray(parsed.allTrips)) {
+        importedTrips = parsed.allTrips;
+      } else if (parsed.days && Array.isArray(parsed.days)) {
+        importedTrips = [parsed];
+      }
+
+      if (importedTrips.length === 0) {
+        showToast('JSON 格式不符，無法匯入行程', 'error');
+        return;
+      }
+
+      const firstImported = JSON.parse(JSON.stringify(importedTrips[0]));
+      firstImported.id = 'trip_imp_' + Date.now();
+      firstImported.code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      firstImported.title = `${firstImported.title} (已匯入)`;
+
+      appState.trips = appState.trips || [];
+      appState.trips.unshift(firstImported);
+      appState.activeTripId = firstImported.id;
+      uiState.activeDayIndex = 0;
+      saveState();
+      closeModal();
+      showToast(`成功匯入「${firstImported.title}」！`);
+    } catch (err) {
+      showToast('讀取 JSON 檔案失敗，請確認檔案是否完整', 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function fetchLatestRates() {
+  const trip = getCurrentTrip();
+  if (!trip) return;
+  showToast('正在抓取最新台幣匯率...');
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/TWD');
+    const data = await res.json();
+    if (!data || !data.rates) throw new Error('API 無效');
+
+    trip.rates = trip.rates || { ...DEFAULT_RATES };
+    trip.rates.TWD = 1;
+    Object.keys(trip.rates).forEach(cur => {
+      if (cur !== 'TWD' && data.rates[cur]) {
+        trip.rates[cur] = Number((1 / data.rates[cur]).toFixed(4));
+      }
+    });
+    saveState();
+    render();
+    showToast('已更新為最新即時匯率！');
+  } catch (err) {
+    showToast('無法連線抓取即時匯率，可手動輸入或稍後再試', 'error');
+  }
 }
 
 function updateCurrencyRate(cur, val) {
   const trip = getCurrentTrip();
-  const num = Number(val);
-  if (num > 0) {
-    trip.rates[cur] = num;
-    saveState();
-    render();
-    showToast(`已更新 ${cur} 匯率為 ${num}`);
-  }
+  trip.rates[cur] = Number(val) || 1;
+  saveState();
+  showToast(`已更新 ${cur} 匯率`);
 }
 
 function deleteCurrencyRate(cur) {
@@ -5510,11 +5616,9 @@ function addCurrencyRate(e) {
   const valEl = document.getElementById('new_cur_val');
   const code = (codeEl?.value || '').trim().toUpperCase();
   const val = Number(valEl?.value);
-  if (!code || !(val > 0)) return;
+  if (!code || !val) return;
   const trip = getCurrentTrip();
   trip.rates[code] = val;
-  codeEl.value = '';
-  valEl.value = '';
   saveState();
   render();
   showToast(`已新增幣別 ${code}`);
@@ -5523,10 +5627,55 @@ function addCurrencyRate(e) {
 function resetAllDemoData() {
   localStorage.removeItem(STORAGE_KEY);
   appState = createInitialData();
-  uiState.modal = null;
+  uiState.activeDayIndex = 0;
+  uiState.swapSourceDayIndex = null;
   saveState();
-  render();
-  showToast('已重置為預設範例資料');
+  closeModal();
+  showToast('已重置全部行程與範本資料');
+}
+
+function generatePlainTextItinerary(trip, shareAll = false) {
+  const targetDays = shareAll ? trip.days : [trip.days[uiState.activeDayIndex] || trip.days[0]];
+  let lines = [`✈️ ${trip.title}`, `🔑 行程碼：${trip.code}`, '────────────────────'];
+
+  targetDays.forEach((day) => {
+    const dayIndex = trip.days.findIndex(d => d.id === day.id);
+    const { md, weekday } = formatDateParts(day.date);
+    lines.push(`\n📅 Day ${dayIndex + 1} (${md} ${weekday}) ${day.themeEmoji || ''} ${day.themeTitle || ''}`);
+    if (day.items.length === 0) {
+      lines.push('  • (尚無安排行程)');
+    } else {
+      day.items.forEach(item => {
+        const meta = ITEM_TYPES[item.type]?.label || '';
+        lines.push(`  • ${item.time} [${meta}] ${item.title}`);
+        if (item.location) lines.push(`    📍 ${item.location}`);
+        if (item.notes) lines.push(`    📝 ${item.notes.replace(/\n+/g, ' / ')}`);
+      });
+    }
+  });
+
+  return lines.join('\n');
+}
+
+function copyShareText() {
+  const box = document.getElementById('share_text_box');
+  if (!box) return;
+  navigator.clipboard?.writeText(box.value).then(() => {
+    showToast('已複製純文字行程到剪貼簿！');
+  }).catch(() => {
+    box.select();
+    document.execCommand('copy');
+    showToast('已複製純文字行程！');
+  });
+}
+
+function addDaysStr(dateStr, addDays) {
+  const parts = dateStr.split('-').map(Number);
+  const d = new Date(parts[0], parts[1] - 1, parts[2] + addDays);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function escapeHtml(str) {
@@ -5543,4 +5692,3 @@ render();
 </script>
 </body>
 </html>
-```[cite: 6, 7, 8]
