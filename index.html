@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>旅遊手冊與分帳記帳</title>
+  <title>Trip Mochi 旅遊手冊與分帳記帳（完整版）</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   <style>
@@ -42,19 +42,19 @@
 <body class="min-h-screen pb-24">
   <div id="app" class="max-w-md mx-auto min-h-screen px-4 pt-4"></div>
 
-  <!-- 通用 Modal 容器 -->
+  <!-- 通用 Modal -->
   <div id="modal-root" class="fixed inset-0 z-50 hidden items-end sm:items-center justify-center bg-black/45 p-0 sm:p-4">
-    <div id="modal-box" class="bg-[#faf9f5] w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 max-h-[88vh] overflow-y-auto shadow-xl border border-[#e6e2d6]"></div>
+    <div id="modal-box" class="bg-[#faf9f5] w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 max-h-[90vh] overflow-y-auto shadow-xl border border-[#e6e2d6]"></div>
   </div>
 
   <!-- Toast 提示 -->
-  <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 z-[60] hidden bg-[#2f332c] text-white text-sm px-4 py-2.5 rounded-full shadow-lg transition-opacity"></div>
+  <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 z-[60] hidden bg-[#2f332c] text-white text-sm px-4 py-2.5 rounded-full shadow-lg"></div>
 
   <script>
-    const STORAGE_KEY = 'travel_handbook_v2_data';
+    const STORAGE_KEY = 'trip_mochi_full_v3';
 
     const DEFAULT_STATE = {
-      activeTab: 'list', // 'itinerary' | 'list' | 'journal' | 'expense'
+      activeTab: 'list', // 'itinerary' | 'booking' | 'list' | 'journal' | 'expense' | 'members'
       tripInfo: {
         title: '廣島・山陽 6日旅遊手冊範本',
         icon: '⛩️',
@@ -67,14 +67,22 @@
           JPY: 0.215,
           KRW: 0.024,
           USD: 32.5
-        },
-        customCurrencies: []
+        }
       },
-      // 身分綁定（本機瀏覽器代表「我」是哪位成員，用於待辦留言防冒名與預設操作者）
       currentUserId: 'm1',
       members: [
-        { id: 'm1', name: '我', avatar: '🐯' },
-        { id: 'm2', name: '鄭聿宸', avatar: '🦊' }
+        { id: 'm1', name: '我', avatar: '🐯', role: '發起人' },
+        { id: 'm2', name: '鄭聿宸', avatar: '🦊', role: '旅伴' }
+      ],
+      // 行程多日與卡片
+      selectedDay: 1,
+      days: [
+        { day: 1, date: '2027-03-19', label: '抵達廣島・平和公園' },
+        { day: 2, date: '2027-03-20', label: '宮島嚴島神社・大鳥居' },
+        { day: 3, date: '2027-03-21', label: '尾道・貓之細道散策' },
+        { day: 4, date: '2027-03-22', label: '倉敷美觀地區・岡山' },
+        { day: 5, date: '2027-03-23', label: '姬路城・神戶夜景' },
+        { day: 6, date: '2027-03-24', label: '大阪採買・返台' }
       ],
       itinerary: [
         {
@@ -82,26 +90,60 @@
           day: 1,
           date: '2027-03-19',
           time: '11:30',
-          title: '抵達廣島機場 → 廣島市區',
           category: '交通',
-          note: '搭乘利木津巴士前往廣島站新幹線口'
+          title: '廣島機場 → 廣島站（利木津巴士）',
+          location: '廣島機場 1 號乘車處',
+          cost: 1560,
+          currency: 'JPY',
+          plusOneDay: false,
+          legs: '廣島機場 → 廣島站新幹線口（約 45 分鐘）',
+          note: '班機抵達後於航廈購票機取票'
         },
         {
           id: 'it2',
           day: 1,
           date: '2027-03-19',
           time: '15:00',
-          title: '廣島和平紀念公園＆原爆圓頂館',
           category: '景點',
-          note: '傍晚散步至本通商店街吃廣島燒'
+          title: '廣島和平紀念公園＆原爆圓頂館',
+          location: '廣島市中區中島町',
+          cost: 0,
+          currency: 'JPY',
+          plusOneDay: false,
+          legs: '',
+          note: '傍晚步行至本通商店街吃晚餐'
         }
       ],
+      // 預訂（航班／交通／住宿／票券提醒）
+      bookings: [
+        {
+          id: 'bk1',
+          type: '航班',
+          title: '台灣虎航 IT212 去程',
+          date: '2027-03-19',
+          time: '07:00 → 10:20',
+          plusOneDay: false,
+          refCode: 'ABC123',
+          reminderDays: 3,
+          note: '桃園 T1 出發，座位 1C'
+        },
+        {
+          id: 'bk2',
+          type: '住宿',
+          title: 'EN HOTEL Hiroshima',
+          date: '2027-03-19',
+          time: 'Check-in 15:00',
+          plusOneDay: false,
+          refCode: 'HTL8821',
+          reminderDays: 1,
+          note: '廣島站步行約 7 分鐘'
+        }
+      ],
+      // 清單
       listSubTab: 'docs', // 'todo' | 'luggage' | 'wishlist' | 'docs'
-      // 4. 文件母項目可自定義
       docCategories: ['入境資料', '簽證', '保險', '訂單'],
       activeDocCategory: '全部',
       documents: [],
-      // 5. 行李清單（支援多人打包狀態 + 警示提醒）
       luggageFilterMemberId: 'm1',
       luggageItems: [
         {
@@ -126,21 +168,20 @@
           packedBy: { m1: false, m2: false }
         }
       ],
-      // 6. 待辦事項（支援指定人物、留言收合、限定本人身分留言）
       todos: [
         {
           id: 'td1',
-          title: '預訂宮島渡輪與嚴島神社參拜時間確認',
-          assigneeId: 'm2', // 'all' 或成員 id
+          title: '確認宮島渡輪與嚴島神社潮汐時間',
+          assigneeId: 'm2',
           done: false,
           commentsExpanded: false,
           comments: [
-            { id: 'c1', authorId: 'm2', text: '已查好潮汐時間，上午滿潮拍大鳥居最美', createdAt: '11/19 14:20' }
+            { id: 'c1', authorId: 'm2', text: '已查好上午滿潮時間，拍照光線最好', createdAt: '11/19 14:20' }
           ]
         },
         {
           id: 'td2',
-          title: '購買日本網卡 / 開通漫遊',
+          title: '準備日本上網 eSIM / 漫遊',
           assigneeId: 'all',
           done: false,
           commentsExpanded: false,
@@ -148,23 +189,23 @@
         }
       ],
       wishlist: [
-        { id: 'w1', title: '尾道千光寺纜車＆貓之細道', category: '景點', note: '下午光線最適合拍照' },
-        { id: 'w2', title: '廣島牡蠣屋 烤牡蠣定食', category: '美食', note: '宮島表參道商店街內' }
+        { id: 'w1', title: '尾道千光寺纜車＆貓之細道', category: '景點', note: '適合安排下午散步' },
+        { id: 'w2', title: '廣島牡蠣屋 烤牡蠣定食', category: '美食', note: '宮島表參道商店街' }
       ],
-      // 7. 日誌（支援完成後再次編輯）
+      // 日誌
       journals: [
         {
           id: 'jn1',
           date: '2027-03-19',
           title: '第一天抵達廣島，廣島燒超滿足！',
-          content: '天氣微涼很舒服，晚餐吃了車站旁的麗ちゃん廣島燒，麵條焦香搭配特製醬汁非常推薦。',
+          content: '天氣微涼很舒服，晚餐吃了車站旁的廣島燒，麵條焦香搭配醬汁非常好吃。',
           authorId: 'm1',
           updatedAt: '2027-03-19 21:30'
         }
       ],
-      // 8 & 9 & 10. 記帳、外幣現金、公費管理
-      expenseSubTab: 'split', // 'split' | 'cash' | 'pool'
-      expenseFilterMemberId: 'all', // 'all' 或成員 id
+      // 記帳
+      expenseSubTab: 'split', // 'split' | 'cash' | 'pool' | 'planned'
+      expenseFilterMemberId: 'all',
       expenses: [
         {
           id: 'ex1',
@@ -175,7 +216,9 @@
           currency: 'JPY',
           payMethod: '現金支付',
           paidBy: 'm2',
-          splitWith: ['m2']
+          splitMode: 'equal',
+          splitWith: ['m2'],
+          customShares: {}
         },
         {
           id: 'ex2',
@@ -186,16 +229,16 @@
           currency: 'JPY',
           payMethod: '現金支付',
           paidBy: 'm1',
-          splitWith: ['m1', 'm2']
+          splitMode: 'equal',
+          splitWith: ['m1', 'm2'],
+          customShares: {}
         }
       ],
-      // 9. 外幣現金袋
       cashWallets: [
-        { id: 'cw1', currency: 'JPY', initialAmount: 80000, note: '出發前台灣銀行換匯' },
+        { id: 'cw1', currency: 'JPY', initialAmount: 80000, note: '出發前換匯' },
         { id: 'cw2', currency: 'KRW', initialAmount: 0, note: '' },
         { id: 'cw3', currency: 'USD', initialAmount: 200, note: '備用美金' }
       ],
-      // 8. 公費管理（支援多幣別入金 + 保管人）
       publicPoolDeposits: [
         {
           id: 'pd1',
@@ -213,8 +256,11 @@
           custodianId: 'm2',
           currency: 'JPY',
           amount: 25000,
-          note: '日幣現金公費（由鄭聿宸保管）'
+          note: '日幣公費（由鄭聿宸保管）'
         }
+      ],
+      plannedExpenses: [
+        { id: 'pl1', title: 'JR 山陽山陰地區鐵路周遊券預估', amount: 23000, currency: 'JPY', note: '出發前先估算' }
       ]
     };
 
@@ -256,7 +302,7 @@
     }
 
     function getMember(id) {
-      return state.members.find(m => m.id === id) || { id, name: '未知成員', avatar: '👤' };
+      return state.members.find(m => m.id === id) || { id, name: '未知成員', avatar: '👤', role: '旅伴' };
     }
 
     function getCurrentUser() {
@@ -293,7 +339,7 @@
       if (e.target.id === 'modal-root') closeModal();
     });
 
-    // 1. 自動抓取最新匯率（使用免費免金鑰公開匯率 API，換算為 1 外幣 = ? TWD）
+    // 1. 自動抓取最新匯率
     async function fetchLatestRates() {
       const btn = document.getElementById('btn-fetch-rates');
       if (btn) {
@@ -305,21 +351,20 @@
         const data = await res.json();
         if (data && data.result === 'success' && data.rates) {
           const currencies = getAllCurrencies().filter(c => c !== 'TWD');
-          let updatedCount = 0;
+          let updated = 0;
           currencies.forEach(code => {
             if (data.rates[code] && data.rates[code] > 0) {
-              // data.rates[code] 是 1 TWD 等於多少外幣，反過來 1 外幣 = 1 / rate TWD
               const twdPerUnit = Number((1 / data.rates[code]).toFixed(4));
               state.tripInfo.rates[code] = twdPerUnit;
               const inputEl = document.getElementById(`rate-input-${code}`);
               if (inputEl) inputEl.value = twdPerUnit;
-              updatedCount++;
+              updated++;
             }
           });
           saveState();
-          showToast(`已更新 ${updatedCount} 種幣別最新匯率！`);
+          showToast(`已更新 ${updated} 種幣別最新匯率！`);
         } else {
-          throw new Error('API 回傳格式異常');
+          throw new Error('API 異常');
         }
       } catch (err) {
         showToast('自動抓取失敗，請檢查網路或手動輸入匯率');
@@ -331,7 +376,7 @@
       }
     }
 
-    // 行程設定與成員管理 Modal（含 1.匯率自動/手動、2.自訂表情圖案、3.拖移排序且右上角不顯示過多頭像）
+    // 行程與系統設定 Modal（1.匯率自動/手動、2.自訂Emoji、3.拖移排序）
     function openSettingsModal() {
       const currencies = getAllCurrencies().filter(c => c !== 'TWD');
       const presetEmojis = ['🐯', '🦊', '🐻', '🐰', '🐶', '🐱', '🐼', '🐨', '🦁', '🐸', '🐧', '🦄'];
@@ -351,13 +396,13 @@
                 ${m.name}
                 ${state.currentUserId === m.id ? '<span class="text-[11px] bg-[#e6efe7] text-[#4f6f52] px-2 py-0.5 rounded-full">目前本機身分</span>' : ''}
               </div>
-              <div class="text-[11px] text-gray-400">可上下拖移調整順序</div>
+              <div class="text-[11px] text-gray-400">可拖移或用箭頭排序</div>
             </div>
           </div>
           <div class="flex items-center gap-1">
-            <button onclick="moveMember(${idx}, -1)" class="p-1.5 text-gray-400 hover:text-gray-700" title="上移"><i class="fa-solid fa-arrow-up text-xs"></i></button>
-            <button onclick="moveMember(${idx}, 1)" class="p-1.5 text-gray-400 hover:text-gray-700" title="下移"><i class="fa-solid fa-arrow-down text-xs"></i></button>
-            ${state.members.length > 1 ? `<button onclick="removeMember('${m.id}')" class="p-1.5 text-red-400 hover:text-red-600" title="刪除"><i class="fa-solid fa-trash-can text-xs"></i></button>` : ''}
+            <button onclick="moveMember(${idx}, -1)" class="p-1.5 text-gray-400 hover:text-gray-700"><i class="fa-solid fa-arrow-up text-xs"></i></button>
+            <button onclick="moveMember(${idx}, 1)" class="p-1.5 text-gray-400 hover:text-gray-700"><i class="fa-solid fa-arrow-down text-xs"></i></button>
+            ${state.members.length > 1 ? `<button onclick="removeMember('${m.id}')" class="p-1.5 text-red-400 hover:text-red-600"><i class="fa-solid fa-trash-can text-xs"></i></button>` : ''}
           </div>
         </div>
       `).join('');
@@ -371,7 +416,6 @@
         </div>
 
         <div class="space-y-5 text-sm">
-          <!-- 基本資訊 -->
           <div class="bg-white p-3.5 rounded-2xl border border-[#e6e2d6] space-y-3">
             <div class="font-bold text-[#4f6f52]">手冊基本資訊</div>
             <div>
@@ -386,11 +430,10 @@
             </div>
           </div>
 
-          <!-- 1. 匯率設定：自動抓取 + 手動保留 -->
           <div class="bg-white p-3.5 rounded-2xl border border-[#e6e2d6] space-y-3">
             <div class="flex items-center justify-between">
               <div class="font-bold text-[#4f6f52]">💱 匯率設定（1 外幣 = ? TWD）</div>
-              <button id="btn-fetch-rates" onclick="fetchLatestRates()" class="text-xs bg-[#e6efe7] text-[#4f6f52] font-semibold px-3 py-1.5 rounded-full hover:bg-[#d7e6d9]">
+              <button id="btn-fetch-rates" onclick="fetchLatestRates()" class="text-xs bg-[#e6efe7] text-[#4f6f52] font-semibold px-3 py-1.5 rounded-full">
                 <i class="fa-solid fa-rotate mr-1"></i>自動抓取最新匯率
               </button>
             </div>
@@ -403,26 +446,23 @@
               `).join('')}
             </div>
             <div class="flex gap-2 pt-1">
-              <input id="new-rate-code" type="text" maxlength="5" placeholder="新增幣別代碼 如 EUR / THB" class="flex-1 border border-[#e6e2d6] rounded-xl px-3 py-1.5 text-xs uppercase bg-[#faf9f5]" />
-              <input id="new-rate-val" type="number" step="0.0001" placeholder="對台幣匯率" class="w-28 border border-[#e6e2d6] rounded-xl px-3 py-1.5 text-xs bg-[#faf9f5]" />
+              <input id="new-rate-code" type="text" maxlength="5" placeholder="新增幣別 如 EUR" class="flex-1 border border-[#e6e2d6] rounded-xl px-3 py-1.5 text-xs uppercase bg-[#faf9f5]" />
+              <input id="new-rate-val" type="number" step="0.0001" placeholder="匯率" class="w-24 border border-[#e6e2d6] rounded-xl px-3 py-1.5 text-xs bg-[#faf9f5]" />
               <button onclick="addCustomCurrencyRate()" class="px-3 py-1.5 rounded-xl bg-[#4f6f52] text-white text-xs font-semibold">新增</button>
             </div>
           </div>
 
-          <!-- 2 & 3. 成員管理（自訂貼入 Emoji + 拖移排序） -->
           <div class="bg-white p-3.5 rounded-2xl border border-[#e6e2d6] space-y-3">
             <div class="flex items-center justify-between">
               <div class="font-bold text-[#4f6f52]">👥 旅伴成員管理（共 ${state.members.length} 人）</div>
-              <span class="text-[11px] text-gray-400">拖移或箭頭調整順序</span>
+              <span class="text-[11px] text-gray-400">拖移排序</span>
             </div>
-            <div id="member-list-container">
-              ${membersHtml}
-            </div>
+            <div>${membersHtml}</div>
             <div class="pt-2 border-t border-[#e6e2d6] space-y-2">
-              <div class="text-xs font-semibold text-gray-600">新增旅伴成員（可貼入手機任意表情符號）</div>
+              <div class="text-xs font-semibold text-gray-600">新增旅伴成員（可自行貼上手機表情符號）</div>
               <div class="flex gap-2">
-                <input id="new-member-avatar" type="text" value="🐶" maxlength="4" placeholder="貼入Emoji" class="w-16 text-center text-xl border border-[#e6e2d6] rounded-xl py-1.5 bg-[#faf9f5]" />
-                <input id="new-member-name" type="text" placeholder="輸入旅伴名稱" class="flex-1 border border-[#e6e2d6] rounded-xl px-3 py-1.5 bg-[#faf9f5]" />
+                <input id="new-member-avatar" type="text" value="🐶" maxlength="4" placeholder="Emoji" class="w-16 text-center text-xl border border-[#e6e2d6] rounded-xl py-1.5 bg-[#faf9f5]" />
+                <input id="new-member-name" type="text" placeholder="旅伴名稱" class="flex-1 border border-[#e6e2d6] rounded-xl px-3 py-1.5 bg-[#faf9f5]" />
                 <button onclick="addMember()" class="px-4 py-1.5 rounded-xl btn-primary text-xs font-semibold">新增</button>
               </div>
               <div class="flex flex-wrap gap-1.5 pt-1">
@@ -433,9 +473,8 @@
             </div>
           </div>
 
-          <!-- JSON 備份與還原 -->
           <div class="bg-white p-3.5 rounded-2xl border border-[#e6e2d6] space-y-2.5">
-            <div class="font-bold text-[#4f6f52]">💾 資料備份與還原（JSON）</div>
+            <div class="font-bold text-[#4f6f52]">💾 JSON 備份與還原</div>
             <div class="grid grid-cols-2 gap-2">
               <button onclick="exportJsonBackup()" class="py-2 px-3 rounded-xl border border-[#4f6f52] text-[#4f6f52] font-semibold text-xs">
                 <i class="fa-solid fa-download mr-1"></i>匯出備份檔
@@ -447,9 +486,7 @@
             </div>
           </div>
 
-          <button onclick="saveSettings()" class="w-full py-3 rounded-2xl btn-primary font-bold text-sm shadow">
-            儲存設定
-          </button>
+          <button onclick="saveSettings()" class="w-full py-3 rounded-2xl btn-primary font-bold text-sm shadow">儲存設定</button>
         </div>
       `);
     }
@@ -457,10 +494,7 @@
     function addCustomCurrencyRate() {
       const code = (document.getElementById('new-rate-code').value || '').trim().toUpperCase();
       const val = parseFloat(document.getElementById('new-rate-val').value);
-      if (!code || isNaN(val) || val <= 0) {
-        showToast('請輸入正確的幣別代碼與匯率');
-        return;
-      }
+      if (!code || isNaN(val) || val <= 0) return showToast('請輸入正確的幣別與匯率');
       state.tripInfo.rates[code] = val;
       saveState();
       openSettingsModal();
@@ -470,13 +504,9 @@
     function addMember() {
       const avatar = (document.getElementById('new-member-avatar').value || '🙂').trim();
       const name = (document.getElementById('new-member-name').value || '').trim();
-      if (!name) {
-        showToast('請輸入旅伴名稱');
-        return;
-      }
+      if (!name) return showToast('請輸入旅伴名稱');
       const newId = 'm_' + Date.now();
-      state.members.push({ id: newId, name, avatar: avatar || '🙂' });
-      // 同步初始化行李打包欄位
+      state.members.push({ id: newId, name, avatar: avatar || '🙂', role: '旅伴' });
       state.luggageItems.forEach(item => {
         if (!item.packedBy) item.packedBy = {};
         item.packedBy[newId] = false;
@@ -490,9 +520,8 @@
     function removeMember(id) {
       if (state.members.length <= 1) return;
       state.members = state.members.filter(m => m.id !== id);
-      if (state.currentUserId === id) {
-        state.currentUserId = state.members[0].id;
-      }
+      if (state.currentUserId === id) state.currentUserId = state.members[0].id;
+      if (state.expenseFilterMemberId === id) state.expenseFilterMemberId = 'all';
       saveState();
       openSettingsModal();
       render();
@@ -509,17 +538,9 @@
       render();
     }
 
-    function handleMemberDragStart(e, index) {
-      dragMemberIndex = index;
-      e.dataTransfer.effectAllowed = 'move';
-    }
-    function handleMemberDragOver(e) {
-      e.preventDefault();
-      e.currentTarget.classList.add('drag-over');
-    }
-    function handleMemberDragLeave(e) {
-      e.currentTarget.classList.remove('drag-over');
-    }
+    function handleMemberDragStart(e, index) { dragMemberIndex = index; }
+    function handleMemberDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+    function handleMemberDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
     function handleMemberDrop(e, targetIndex) {
       e.preventDefault();
       e.currentTarget.classList.remove('drag-over');
@@ -536,7 +557,6 @@
       const title = document.getElementById('set-title').value.trim();
       if (title) state.tripInfo.title = title;
       state.currentUserId = document.getElementById('set-current-user').value;
-
       const currencies = getAllCurrencies().filter(c => c !== 'TWD');
       currencies.forEach(code => {
         const el = document.getElementById(`rate-input-${code}`);
@@ -545,7 +565,6 @@
           if (!isNaN(v) && v > 0) state.tripInfo.rates[code] = v;
         }
       });
-
       saveState();
       closeModal();
       render();
@@ -584,25 +603,22 @@
     }
 
     function shareSummaryText() {
-      const text = `【${state.tripInfo.title}】\n行程代碼：${state.tripInfo.code}\n旅伴：${state.members.map(m => m.avatar + m.name).join('、')}\n總支出筆數：${state.expenses.length} 筆`;
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(text).then(() => showToast('已複製行程摘要文字'));
-      } else {
-        showToast('已準備好分享摘要');
-      }
+      const text = `【${state.tripInfo.title}】Code: ${state.tripInfo.code}\n成員：${state.members.map(m => m.avatar + m.name).join('、')}`;
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => showToast('已複製行程摘要文字'));
+      else showToast('已準備分享摘要');
     }
 
-    // ==================== 頂部 Header（3. 移除右上角過多頭像溢出，改為乾淨人數膠囊） ====================
+    // ==================== 頂部 Header（3. 移除右上角過多頭像溢出） ====================
     function renderHeader() {
       const me = getCurrentUser();
       return `
         <div class="flex items-center justify-between mb-3">
-          <button onclick="showToast('目前已位於主手冊頁面')" class="px-3.5 py-1.5 rounded-full bg-white border border-[#e6e2d6] text-xs font-medium text-gray-700 flex items-center gap-1.5 shadow-2xs">
+          <button onclick="showToast('目前已位於主手冊頁面')" class="px-3.5 py-1.5 rounded-full bg-white border border-[#e6e2d6] text-xs font-medium text-gray-700 flex items-center gap-1.5">
             <i class="fa-solid fa-chevron-left text-[10px]"></i> 返回首頁
           </button>
           <div class="flex items-center gap-2">
             <span class="px-3 py-1.5 rounded-full bg-white border border-[#e6e2d6] text-xs font-mono text-gray-600">Code: ${state.tripInfo.code}</span>
-            <button onclick="openSettingsModal()" class="w-8 h-8 rounded-full bg-white border border-[#e6e2d6] flex items-center justify-center text-gray-700 shadow-2xs" title="設定與成員管理">
+            <button onclick="openSettingsModal()" class="w-8 h-8 rounded-full bg-white border border-[#e6e2d6] flex items-center justify-center text-gray-700" title="設定與成員管理">
               <i class="fa-solid fa-gear text-sm"></i>
             </button>
           </div>
@@ -611,9 +627,7 @@
         <div class="flex items-center gap-2 mb-3">
           <span class="text-2xl">${state.tripInfo.icon}</span>
           <h1 class="text-xl font-bold tracking-tight text-[#232720] truncate">${state.tripInfo.title}</h1>
-          <button onclick="openSettingsModal()" class="text-gray-400 hover:text-gray-600 text-xs">
-            <i class="fa-solid fa-pen"></i>
-          </button>
+          <button onclick="openSettingsModal()" class="text-gray-400 hover:text-gray-600 text-xs"><i class="fa-solid fa-pen"></i></button>
         </div>
 
         <div class="flex items-center justify-between mb-4">
@@ -625,16 +639,312 @@
               <i class="fa-solid fa-download"></i> 備份
             </button>
           </div>
-          <button onclick="openSettingsModal()" class="px-3 py-1 rounded-full bg-white border border-[#e6e2d6] text-xs text-gray-600 flex items-center gap-1.5" title="點擊管理成員與切換本機身分">
+          <button onclick="state.activeTab='members'; saveState(); render();" class="px-3 py-1 rounded-full bg-white border border-[#e6e2d6] text-xs text-gray-600 flex items-center gap-1.5">
             <span>${me.avatar} ${me.name}</span>
             <span class="text-gray-300">|</span>
-            <span class="text-[#4f6f52] font-semibold">共 ${state.members.length} 人</span>
+            <span class="text-[#4f6f52] font-semibold">${state.members.length} 位成員</span>
           </button>
         </div>
       `;
     }
 
-    // ==================== 清單分頁（4. 自定義文件母項目、5. 行李看夥伴進度+警示、6. 待辦指定人+收合+IP/身分鎖定留言） ====================
+    // ==================== 行程分頁（多日切換、日期對調、依時間重排、一鍵轉記帳） ====================
+    function renderItineraryTab() {
+      const dayItems = state.itinerary.filter(i => i.day === state.selectedDay);
+      const currentDayObj = state.days.find(d => d.day === state.selectedDay) || state.days[0];
+
+      return `
+        <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 mb-3">
+          ${state.days.map(d => {
+            const active = d.day === state.selectedDay;
+            return `
+              <button onclick="state.selectedDay=${d.day}; saveState(); render();"
+                class="px-3.5 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap border ${active ? 'btn-primary border-[#4f6f52]' : 'bg-white border-[#e6e2d6] text-gray-700'}">
+                <div>Day ${d.day}</div>
+                <div class="text-[10px] opacity-80">${d.date.slice(5)}</div>
+              </button>
+            `;
+          }).join('')}
+        </div>
+
+        <div class="card-surface p-3.5 mb-3 flex items-center justify-between gap-2">
+          <div>
+            <div class="text-xs text-[#4f6f52] font-bold">Day ${currentDayObj.day} · ${currentDayObj.date}</div>
+            <div class="font-bold text-sm">${currentDayObj.label}</div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button onclick="sortDayItineraryByTime()" class="px-2.5 py-1.5 rounded-xl bg-white border border-[#e6e2d6] text-xs font-semibold text-gray-700" title="依時間重排">
+              <i class="fa-solid fa-arrow-down-short-wide mr-1"></i>重排
+            </button>
+            <button onclick="openSwapDaysModal()" class="px-2.5 py-1.5 rounded-xl bg-white border border-[#e6e2d6] text-xs font-semibold text-gray-700" title="日期對調">
+              <i class="fa-solid fa-right-left mr-1"></i>對調
+            </button>
+          </div>
+        </div>
+
+        <button onclick="openAddItineraryModal()" class="w-full py-3 rounded-2xl btn-primary font-semibold text-sm flex items-center justify-center gap-2 mb-4 shadow-xs">
+          <i class="fa-solid fa-plus"></i> 新增 Day ${state.selectedDay} 行程卡片
+        </button>
+
+        <div class="space-y-2.5">
+          ${dayItems.length === 0 ? `
+            <div class="card-surface p-8 text-center text-xs text-gray-400">這天還沒有安排行程，點上方按鈕新增或從「想去清單」排入</div>
+          ` : dayItems.map((it, idx) => `
+            <div class="card-surface p-4">
+              <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
+                <span class="font-bold text-[#4f6f52]">
+                  ${it.time} ${it.plusOneDay ? '<span class="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px]">+1日</span>' : ''}
+                </span>
+                <div class="flex items-center gap-1.5">
+                  <span class="px-2 py-0.5 rounded-full bg-[#efede4]">${it.category}</span>
+                  <button onclick="moveItineraryItem('${it.id}', -1)" class="text-gray-400 hover:text-gray-700 px-1"><i class="fa-solid fa-chevron-up"></i></button>
+                  <button onclick="moveItineraryItem('${it.id}', 1)" class="text-gray-400 hover:text-gray-700 px-1"><i class="fa-solid fa-chevron-down"></i></button>
+                </div>
+              </div>
+              <div class="font-bold text-base">${it.title}</div>
+              ${it.location ? `<div class="text-xs text-gray-500 mt-0.5"><i class="fa-solid fa-location-dot mr-1 text-gray-400"></i>${it.location}</div>` : ''}
+              ${it.legs ? `<div class="text-xs bg-white border border-[#e6e2d6] rounded-xl px-2.5 py-1.5 mt-1.5 text-gray-600">轉乘/路線：${it.legs}</div>` : ''}
+              ${it.note ? `<div class="text-xs text-gray-500 mt-1">${it.note}</div>` : ''}
+              <div class="mt-3 pt-2 border-t border-[#e6e2d6] flex items-center justify-between text-xs">
+                <span class="font-semibold text-gray-700">${it.cost > 0 ? `${it.currency} ${Number(it.cost).toLocaleString()}` : '免費 / 未填金額'}</span>
+                <div class="flex items-center gap-3">
+                  ${it.cost > 0 ? `<button onclick="convertItineraryToExpense('${it.id}')" class="text-[#4f6f52] font-semibold"><i class="fa-solid fa-coins mr-1"></i>轉入記帳</button>` : ''}
+                  <button onclick="deleteItineraryItem('${it.id}')" class="text-red-400">刪除</button>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function openAddItineraryModal(prefillTitle = '', prefillCat = '景點', prefillNote = '') {
+      openModal(`
+        <h3 class="text-base font-bold mb-3">新增行程卡片（Day ${state.selectedDay}）</h3>
+        <div class="space-y-3 text-sm">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">時間</label>
+              <input id="it-time" type="time" value="09:30" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">類別</label>
+              <select id="it-cat" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
+                <option ${prefillCat==='景點'?'selected':''}>景點</option>
+                <option ${prefillCat==='美食'?'selected':''}>美食</option>
+                <option ${prefillCat==='交通'?'selected':''}>交通</option>
+                <option ${prefillCat==='購物'?'selected':''}>購物</option>
+                <option ${prefillCat==='住宿'?'selected':''}>住宿</option>
+              </select>
+            </div>
+          </div>
+          <input id="it-title" type="text" value="${prefillTitle}" placeholder="行程名稱" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <input id="it-loc" type="text" placeholder="地點 / 站名（選填）" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <input id="it-legs" type="text" placeholder="多段轉乘或移動路線說明（選填）" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <div class="grid grid-cols-2 gap-2">
+            <input id="it-cost" type="number" placeholder="預估費用（選填）" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+            <select id="it-cur" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
+              ${getAllCurrencies().map(c => `<option value="${c}" ${c==='JPY'?'selected':''}>${c}</option>`).join('')}
+            </select>
+          </div>
+          <label class="flex items-center gap-2 text-xs text-gray-700">
+            <input id="it-plus1" type="checkbox" class="accent-[#4f6f52]" /> 跨日抵達 / 結束標記（+1 日）
+          </label>
+          <input id="it-note" type="text" value="${prefillNote}" placeholder="備註" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <button onclick="saveItineraryItem()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">儲存行程</button>
+        </div>
+      `);
+    }
+
+    function saveItineraryItem() {
+      const title = document.getElementById('it-title').value.trim();
+      if (!title) return showToast('請輸入行程名稱');
+      const dayObj = state.days.find(d => d.day === state.selectedDay) || state.days[0];
+      state.itinerary.push({
+        id: 'it_' + Date.now(),
+        day: state.selectedDay,
+        date: dayObj.date,
+        time: document.getElementById('it-time').value,
+        category: document.getElementById('it-cat').value,
+        title,
+        location: document.getElementById('it-loc').value.trim(),
+        legs: document.getElementById('it-legs').value.trim(),
+        cost: Number(document.getElementById('it-cost').value) || 0,
+        currency: document.getElementById('it-cur').value,
+        plusOneDay: document.getElementById('it-plus1').checked,
+        note: document.getElementById('it-note').value.trim()
+      });
+      saveState();
+      closeModal();
+      render();
+      showToast(`已加入 Day ${state.selectedDay}`);
+    }
+
+    function sortDayItineraryByTime() {
+      const others = state.itinerary.filter(i => i.day !== state.selectedDay);
+      const sameDay = state.itinerary.filter(i => i.day === state.selectedDay).sort((a, b) => a.time.localeCompare(b.time));
+      state.itinerary = [...others, ...sameDay];
+      saveState();
+      render();
+      showToast('已依時間重新排序');
+    }
+
+    function openSwapDaysModal() {
+      openModal(`
+        <h3 class="text-base font-bold mb-3">日期行程對調</h3>
+        <div class="space-y-3 text-sm">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">天數 A</label>
+              <select id="swap-a" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
+                ${state.days.map(d => `<option value="${d.day}">Day ${d.day}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">天數 B</label>
+              <select id="swap-b" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
+                ${state.days.map(d => `<option value="${d.day}" ${d.day===2?'selected':''}>Day ${d.day}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <button onclick="executeSwapDays()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">確認對調行程內容</button>
+        </div>
+      `);
+    }
+
+    function executeSwapDays() {
+      const a = Number(document.getElementById('swap-a').value);
+      const b = Number(document.getElementById('swap-b').value);
+      if (a === b) return showToast('請選擇不同的兩天');
+      state.itinerary.forEach(item => {
+        if (item.day === a) item.day = b;
+        else if (item.day === b) item.day = a;
+      });
+      saveState();
+      closeModal();
+      render();
+      showToast(`已對調 Day ${a} 與 Day ${b} 的行程`);
+    }
+
+    function moveItineraryItem(id, dir) {
+      const sameDayIndices = state.itinerary
+        .map((it, i) => ({ it, i }))
+        .filter(x => x.it.day === state.selectedDay);
+      const pos = sameDayIndices.findIndex(x => x.it.id === id);
+      const targetPos = pos + dir;
+      if (pos < 0 || targetPos < 0 || targetPos >= sameDayIndices.length) return;
+      const idxA = sameDayIndices[pos].i;
+      const idxB = sameDayIndices[targetPos].i;
+      const tmp = state.itinerary[idxA];
+      state.itinerary[idxA] = state.itinerary[idxB];
+      state.itinerary[idxB] = tmp;
+      saveState();
+      render();
+    }
+
+    function convertItineraryToExpense(id) {
+      const it = state.itinerary.find(x => x.id === id);
+      if (!it || !it.cost) return;
+      state.expenses.unshift({
+        id: 'ex_' + Date.now(),
+        date: it.date,
+        category: it.category || '其他',
+        title: it.title,
+        amount: it.cost,
+        currency: it.currency || 'JPY',
+        payMethod: '現金支付',
+        paidBy: state.currentUserId,
+        splitMode: 'equal',
+        splitWith: state.members.map(m => m.id),
+        customShares: {}
+      });
+      saveState();
+      showToast(`已將「${it.title}」轉入記帳明細`);
+    }
+
+    function deleteItineraryItem(id) {
+      state.itinerary = state.itinerary.filter(x => x.id !== id);
+      saveState();
+      render();
+    }
+
+    // ==================== 預訂分頁 ====================
+    function renderBookingTab() {
+      return `
+        <button onclick="openAddBookingModal()" class="w-full py-3 rounded-2xl btn-primary font-semibold text-sm flex items-center justify-center gap-2 mb-4 shadow-xs">
+          <i class="fa-solid fa-plus"></i> 新增航班 / 住宿 / 票券預訂
+        </button>
+        <div class="space-y-2.5">
+          ${state.bookings.map(bk => `
+            <div class="card-surface p-4">
+              <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
+                <span class="px-2.5 py-0.5 rounded-full bg-[#e6efe7] text-[#3d5a40] font-bold">${bk.type}</span>
+                <span>提前 ${bk.reminderDays || 1} 天提醒</span>
+              </div>
+              <div class="font-bold text-base">${bk.title} ${bk.plusOneDay ? '<span class="text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">+1</span>' : ''}</div>
+              <div class="text-xs text-gray-600 mt-1">${bk.date} · ${bk.time}</div>
+              ${bk.refCode ? `<div class="text-xs font-mono text-gray-500 mt-0.5">憑證/訂位代號：${bk.refCode}</div>` : ''}
+              ${bk.note ? `<div class="text-xs text-gray-500 mt-1">${bk.note}</div>` : ''}
+              <div class="mt-2 text-right">
+                <button onclick="deleteBooking('${bk.id}')" class="text-xs text-red-400">刪除</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function openAddBookingModal() {
+      openModal(`
+        <h3 class="text-base font-bold mb-3">新增預訂資訊</h3>
+        <div class="space-y-3 text-sm">
+          <select id="bk-type" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
+            <option>航班</option><option>住宿</option><option>交通票券</option><option>門票/體驗</option>
+          </select>
+          <input id="bk-title" type="text" placeholder="名稱（如：JR Pass / 飯店名稱）" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <div class="grid grid-cols-2 gap-2">
+            <input id="bk-date" type="date" value="${state.tripInfo.startDate}" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+            <input id="bk-time" type="text" placeholder="時間或時段" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <input id="bk-ref" type="text" placeholder="確認碼 / 代號" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+            <input id="bk-rem" type="number" value="2" min="0" placeholder="提前幾天提醒" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          </div>
+          <label class="flex items-center gap-2 text-xs">
+            <input id="bk-plus1" type="checkbox" class="accent-[#4f6f52]" /> 跨日（+1）
+          </label>
+          <input id="bk-note" type="text" placeholder="備註" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <button onclick="saveBooking()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">儲存預訂</button>
+        </div>
+      `);
+    }
+
+    function saveBooking() {
+      const title = document.getElementById('bk-title').value.trim();
+      if (!title) return showToast('請輸入名稱');
+      state.bookings.unshift({
+        id: 'bk_' + Date.now(),
+        type: document.getElementById('bk-type').value,
+        title,
+        date: document.getElementById('bk-date').value,
+        time: document.getElementById('bk-time').value.trim(),
+        refCode: document.getElementById('bk-ref').value.trim(),
+        reminderDays: Number(document.getElementById('bk-rem').value) || 0,
+        plusOneDay: document.getElementById('bk-plus1').checked,
+        note: document.getElementById('bk-note').value.trim()
+      });
+      saveState();
+      closeModal();
+      render();
+    }
+
+    function deleteBooking(id) {
+      state.bookings = state.bookings.filter(b => b.id !== id);
+      saveState();
+      render();
+    }
+
+    // ==================== 清單分頁（4.自訂文件分類、5.行李看夥伴+警示、6.待辦指定人+收合+鎖定身分留言） ====================
     function renderListTab() {
       const subTabs = [
         { id: 'todo', icon: 'fa-regular fa-circle-check', label: '待辦' },
@@ -649,7 +959,7 @@
             const active = state.listSubTab === t.id;
             return `
               <button onclick="state.listSubTab='${t.id}'; saveState(); render();"
-                class="py-2 rounded-full text-xs font-semibold flex items-center justify-center gap-1.5 transition ${active ? 'btn-primary shadow-xs' : 'text-gray-600'}">
+                class="py-2 rounded-full text-xs font-semibold flex items-center justify-center gap-1.5 ${active ? 'btn-primary shadow-xs' : 'text-gray-600'}">
                 <i class="${t.icon}"></i> ${t.label}
               </button>
             `;
@@ -659,7 +969,6 @@
 
       let contentHtml = '';
 
-      // 4. 文件分頁（支援自定義母項目）
       if (state.listSubTab === 'docs') {
         const categories = ['全部', ...state.docCategories];
         const filteredDocs = state.activeDocCategory === '全部'
@@ -673,13 +982,13 @@
               const count = cat === '全部' ? state.documents.length : state.documents.filter(d => d.category === cat).length;
               return `
                 <button onclick="state.activeDocCategory='${cat}'; saveState(); render();"
-                  class="px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition ${active ? 'bg-[#2f332c] text-white border-[#2f332c]' : 'bg-white text-gray-700 border-[#e6e2d6]'}">
+                  class="px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border ${active ? 'bg-[#2f332c] text-white border-[#2f332c]' : 'bg-white text-gray-700 border-[#e6e2d6]'}">
                   ${cat}${cat === '全部' || count > 0 ? ` (${count})` : ''}
                 </button>
               `;
             }).join('')}
             <button onclick="openAddDocCategoryModal()" class="px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap bg-[#e6efe7] text-[#4f6f52] border border-[#cde0cf]">
-              <i class="fa-solid fa-plus mr-1"></i>自訂分類
+              <i class="fa-solid fa-plus mr-1"></i>自訂母項目
             </button>
           </div>
 
@@ -693,22 +1002,20 @@
                 <i class="fa-regular fa-folder-open"></i>
               </div>
               <div class="font-bold text-base mb-1">尚無${state.activeDocCategory === '全部' ? '' : state.activeDocCategory}資料或文件</div>
-              <div class="text-xs text-gray-400">可記錄護照效期、保險單號、訂房確認碼或自訂分類文件</div>
+              <div class="text-xs text-gray-400">可記錄護照效期、保險單號、訂房確認碼或自訂母項目</div>
             </div>
           ` : `
             <div class="space-y-2.5">
               ${filteredDocs.map(doc => `
-                <div class="card-surface p-4">
-                  <div class="flex items-start justify-between gap-2">
-                    <div>
-                      <span class="inline-block text-[11px] bg-[#e6efe7] text-[#4f6f52] font-semibold px-2.5 py-0.5 rounded-full mb-1.5">${doc.category}</span>
-                      <div class="font-bold text-sm">${doc.title}</div>
-                      ${doc.refNo ? `<div class="text-xs font-mono text-gray-600 mt-1">編號/代碼：${doc.refNo}</div>` : ''}
-                      ${doc.expiry ? `<div class="text-xs text-amber-700 mt-0.5"><i class="fa-regular fa-clock mr-1"></i>到期/日期：${doc.expiry}</div>` : ''}
-                      ${doc.note ? `<div class="text-xs text-gray-500 mt-1">${doc.note}</div>` : ''}
-                    </div>
-                    <button onclick="deleteDocument('${doc.id}')" class="text-xs text-red-400 hover:text-red-600 px-2 py-1">刪除</button>
+                <div class="card-surface p-4 flex items-start justify-between gap-2">
+                  <div>
+                    <span class="inline-block text-[11px] bg-[#e6efe7] text-[#4f6f52] font-semibold px-2.5 py-0.5 rounded-full mb-1">${doc.category}</span>
+                    <div class="font-bold text-sm">${doc.title}</div>
+                    ${doc.refNo ? `<div class="text-xs font-mono text-gray-600 mt-0.5">單號/代碼：${doc.refNo}</div>` : ''}
+                    ${doc.expiry ? `<div class="text-xs text-amber-700 mt-0.5">日期/效期：${doc.expiry}</div>` : ''}
+                    ${doc.note ? `<div class="text-xs text-gray-500 mt-0.5">${doc.note}</div>` : ''}
                   </div>
+                  <button onclick="deleteDocument('${doc.id}')" class="text-xs text-red-400">刪除</button>
                 </div>
               `).join('')}
             </div>
@@ -716,18 +1023,16 @@
         `;
       }
 
-      // 5. 行李清單（查看所有夥伴打包狀況 + 新增警示提醒）
       if (state.listSubTab === 'luggage') {
         const viewingMemberId = state.luggageFilterMemberId || state.currentUserId;
         const viewingMember = getMember(viewingMemberId);
         const packedCount = state.luggageItems.filter(i => i.packedBy && i.packedBy[viewingMemberId]).length;
 
         contentHtml = `
-          <!-- 切換查看哪位夥伴的行李進度 -->
           <div class="card-surface p-3.5 mb-3">
             <div class="flex items-center justify-between mb-2">
               <span class="text-xs font-bold text-gray-600">查看夥伴打包狀況</span>
-              <span class="text-xs font-semibold text-[#4f6f52]">${viewingMember.avatar} ${viewingMember.name}：${packedCount}/${state.luggageItems.length} 已打包</span>
+              <span class="text-xs font-semibold text-[#4f6f52]">${viewingMember.avatar} ${viewingMember.name}：${packedCount}/${state.luggageItems.length}</span>
             </div>
             <div class="flex gap-2 overflow-x-auto no-scrollbar">
               ${state.members.map(m => {
@@ -735,9 +1040,8 @@
                 const active = viewingMemberId === m.id;
                 return `
                   <button onclick="state.luggageFilterMemberId='${m.id}'; saveState(); render();"
-                    class="px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border flex items-center gap-1.5 ${active ? 'btn-primary border-[#4f6f52]' : 'bg-white border-[#e6e2d6] text-gray-700'}">
-                    <span>${m.avatar} ${m.name}</span>
-                    <span class="text-[11px] opacity-85">(${mPacked}/${state.luggageItems.length})</span>
+                    class="px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border ${active ? 'btn-primary border-[#4f6f52]' : 'bg-white border-[#e6e2d6] text-gray-700'}">
+                    ${m.avatar} ${m.name} (${mPacked}/${state.luggageItems.length})
                   </button>
                 `;
               }).join('')}
@@ -755,8 +1059,7 @@
                 <div class="card-surface p-3.5">
                   <div class="flex items-start justify-between gap-2">
                     <label class="flex items-start gap-3 cursor-pointer flex-1">
-                      <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleLuggagePack('${item.id}', '${viewingMemberId}')"
-                        class="mt-1 w-4 h-4 accent-[#4f6f52] rounded" />
+                      <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleLuggagePack('${item.id}', '${viewingMemberId}')" class="mt-1 w-4 h-4 accent-[#4f6f52]" />
                       <div class="flex-1">
                         <div class="flex items-center gap-2 flex-wrap">
                           <span class="font-semibold text-sm ${isChecked ? 'line-through text-gray-400' : ''}">${item.name}</span>
@@ -768,7 +1071,6 @@
                             <span>${item.alertNote}</span>
                           </div>
                         ` : ''}
-                        <!-- 全體旅伴打包狀態一覽 -->
                         <div class="mt-2 flex flex-wrap gap-1.5">
                           ${state.members.map(m => {
                             const ok = !!(item.packedBy && item.packedBy[m.id]);
@@ -782,9 +1084,7 @@
                       </div>
                     </label>
                     <div class="flex items-center gap-1">
-                      <button onclick="openEditLuggageAlertModal('${item.id}')" class="text-xs text-amber-600 px-1.5 py-1" title="編輯警示提醒">
-                        <i class="fa-solid fa-bell"></i>
-                      </button>
+                      <button onclick="openEditLuggageAlertModal('${item.id}')" class="text-xs text-amber-600 px-1.5 py-1" title="編輯警示提醒"><i class="fa-solid fa-bell"></i></button>
                       <button onclick="deleteLuggageItem('${item.id}')" class="text-xs text-red-400 px-1.5 py-1">刪除</button>
                     </div>
                   </div>
@@ -795,7 +1095,6 @@
         `;
       }
 
-      // 6. 待辦事項（支援指定人物 + 留言進度收合 + 限定自己本機身分留言）
       if (state.listSubTab === 'todo') {
         const me = getCurrentUser();
         contentHtml = `
@@ -816,11 +1115,10 @@
                 <div class="card-surface p-4">
                   <div class="flex items-start justify-between gap-2">
                     <label class="flex items-start gap-2.5 cursor-pointer flex-1">
-                      <input type="checkbox" ${td.done ? 'checked' : ''} onchange="toggleTodo('${td.id}')"
-                        class="mt-1 w-4 h-4 accent-[#4f6f52]" />
+                      <input type="checkbox" ${td.done ? 'checked' : ''} onchange="toggleTodo('${td.id}')" class="mt-1 w-4 h-4 accent-[#4f6f52]" />
                       <div>
                         <div class="font-bold text-sm ${td.done ? 'line-through text-gray-400' : ''}">${td.title}</div>
-                        <div class="mt-1 flex items-center gap-2">
+                        <div class="mt-1">
                           ${assignee
                             ? `<span class="text-[11px] bg-[#f3f1ea] border border-[#e6e2d6] px-2.5 py-0.5 rounded-full font-medium">負責人：${assignee.avatar} ${assignee.name}</span>`
                             : `<span class="text-[11px] bg-[#e6efe7] text-[#3d5a40] px-2.5 py-0.5 rounded-full font-medium">👥 全體共同</span>`
@@ -831,17 +1129,15 @@
                     <button onclick="deleteTodo('${td.id}')" class="text-xs text-red-400 px-2 py-1">刪除</button>
                   </div>
 
-                  <!-- 收合按鈕與進度留言區 -->
                   <div class="mt-3 pt-2.5 border-t border-[#e6e2d6]">
-                    <button onclick="toggleTodoComments('${td.id}')"
-                      class="w-full flex items-center justify-between text-xs font-semibold text-gray-600 bg-white border border-[#e6e2d6] rounded-xl px-3 py-1.5">
+                    <button onclick="toggleTodoComments('${td.id}')" class="w-full flex items-center justify-between text-xs font-semibold text-gray-600 bg-white border border-[#e6e2d6] rounded-xl px-3 py-1.5">
                       <span><i class="fa-regular fa-comments mr-1.5 text-[#4f6f52]"></i>進度留言（${comments.length} 則）</span>
-                      <span>${td.commentsExpanded ? '收合 ▲' : '展開查看 / 留言 ▼'}</span>
+                      <span>${td.commentsExpanded ? '收合 ▲' : '展開 ▼'}</span>
                     </button>
 
                     ${td.commentsExpanded ? `
                       <div class="mt-2.5 space-y-2">
-                        ${comments.length === 0 ? `<div class="text-xs text-gray-400 text-center py-2">尚無進度留言</div>` : comments.map(c => {
+                        ${comments.map(c => {
                           const author = getMember(c.authorId);
                           return `
                             <div class="bg-white border border-[#e6e2d6] rounded-xl px-3 py-2 text-xs">
@@ -853,14 +1149,9 @@
                             </div>
                           `;
                         }).join('')}
-
-                        <!-- 只能以本機綁定的身分留言 -->
                         <div class="flex items-center gap-1.5 pt-1">
-                          <span class="text-xs bg-[#f3f1ea] px-2.5 py-1.5 rounded-xl whitespace-nowrap font-semibold text-gray-700" title="鎖定本機身分留言">
-                            ${me.avatar} ${me.name}
-                          </span>
-                          <input id="todo-comment-input-${td.id}" type="text" placeholder="以「${me.name}」身分回報進度..."
-                            class="flex-1 border border-[#e6e2d6] rounded-xl px-3 py-1.5 text-xs bg-white" />
+                          <span class="text-xs bg-[#f3f1ea] px-2.5 py-1.5 rounded-xl whitespace-nowrap font-semibold">${me.avatar} ${me.name}</span>
+                          <input id="todo-comment-input-${td.id}" type="text" placeholder="以「${me.name}」身分留言..." class="flex-1 border border-[#e6e2d6] rounded-xl px-3 py-1.5 text-xs bg-white" />
                           <button onclick="addTodoComment('${td.id}')" class="px-3 py-1.5 rounded-xl btn-primary text-xs font-semibold">送出</button>
                         </div>
                       </div>
@@ -873,7 +1164,6 @@
         `;
       }
 
-      // 想去清單
       if (state.listSubTab === 'wishlist') {
         contentHtml = `
           <button onclick="openAddWishlistModal()" class="w-full py-3 rounded-2xl btn-primary font-semibold text-sm flex items-center justify-center gap-2 mb-4 shadow-xs">
@@ -881,13 +1171,16 @@
           </button>
           <div class="space-y-2.5">
             ${state.wishlist.map(w => `
-              <div class="card-surface p-4 flex items-start justify-between">
+              <div class="card-surface p-4 flex items-start justify-between gap-2">
                 <div>
                   <span class="text-[11px] bg-[#efede4] px-2.5 py-0.5 rounded-full text-gray-600">${w.category}</span>
                   <div class="font-bold text-sm mt-1">${w.title}</div>
                   ${w.note ? `<div class="text-xs text-gray-500 mt-0.5">${w.note}</div>` : ''}
                 </div>
-                <button onclick="deleteWishlist('${w.id}')" class="text-xs text-red-400">刪除</button>
+                <div class="flex items-center gap-2">
+                  <button onclick="state.activeTab='itinerary'; openAddItineraryModal('${w.title.replace(/'/g,"\\'")}','${w.category}','${(w.note||'').replace(/'/g,"\\'")}');" class="text-xs bg-[#e6efe7] text-[#3d5a40] font-semibold px-2.5 py-1 rounded-xl">排入行程</button>
+                  <button onclick="deleteWishlist('${w.id}')" class="text-xs text-red-400">刪除</button>
+                </div>
               </div>
             `).join('')}
           </div>
@@ -897,31 +1190,26 @@
       return subNavHtml + contentHtml;
     }
 
-    // ==================== 4, 5, 6 相關操作與 Modal ====================
     function openAddDocCategoryModal() {
       openModal(`
-        <h3 class="text-base font-bold mb-3">自定義文件母項目分類</h3>
+        <h3 class="text-base font-bold mb-3">自定義文件母項目</h3>
         <div class="space-y-3 text-sm">
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">分類名稱（如：交通票券、門票憑證、租車資料）</label>
-            <input id="custom-doc-cat" type="text" placeholder="輸入新分類名稱" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
+          <input id="custom-doc-cat" type="text" placeholder="輸入新母項目名稱（如：交通票券）" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
           <div class="flex flex-wrap gap-1.5">
             ${state.docCategories.map(c => `
               <span class="text-xs bg-white border border-[#e6e2d6] px-2.5 py-1 rounded-full flex items-center gap-1.5">
-                ${c}
-                <button onclick="removeDocCategory('${c}')" class="text-red-400 hover:text-red-600">×</button>
+                ${c} <button onclick="removeDocCategory('${c}')" class="text-red-400">×</button>
               </span>
             `).join('')}
           </div>
-          <button onclick="saveNewDocCategory()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">新增分類</button>
+          <button onclick="saveNewDocCategory()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">新增母項目</button>
         </div>
       `);
     }
 
     function saveNewDocCategory() {
       const name = (document.getElementById('custom-doc-cat').value || '').trim();
-      if (!name) return showToast('請輸入分類名稱');
+      if (!name) return showToast('請輸入母項目名稱');
       if (!state.docCategories.includes(name)) {
         state.docCategories.push(name);
         state.activeDocCategory = name;
@@ -929,7 +1217,7 @@
       }
       closeModal();
       render();
-      showToast(`已新增「${name}」分類`);
+      showToast(`已新增「${name}」母項目`);
     }
 
     function removeDocCategory(cat) {
@@ -944,30 +1232,12 @@
       openModal(`
         <h3 class="text-base font-bold mb-3">新增資料或文件</h3>
         <div class="space-y-3 text-sm">
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">所屬分類（或直接輸入新分類）</label>
-            <input id="doc-cat-input" list="doc-cat-list" value="${state.activeDocCategory !== '全部' ? state.activeDocCategory : state.docCategories[0] || ''}"
-              class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" placeholder="選擇或直接輸入新母項目" />
-            <datalist id="doc-cat-list">
-              ${state.docCategories.map(c => `<option value="${c}">`).join('')}
-            </datalist>
-          </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">文件名稱</label>
-            <input id="doc-title" type="text" placeholder="例如：富邦旅平險保單 / 廣島飯店訂房" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">單號 / 確認碼（選填）</label>
-            <input id="doc-ref" type="text" placeholder="例如：INS-20270319" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">到期日 / 使用日期（選填）</label>
-            <input id="doc-expiry" type="date" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">備註（選填）</label>
-            <input id="doc-note" type="text" placeholder="補充說明" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
+          <input id="doc-cat-input" list="doc-cat-list" value="${state.activeDocCategory !== '全部' ? state.activeDocCategory : state.docCategories[0] || ''}" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" placeholder="選擇或直接輸入新母項目" />
+          <datalist id="doc-cat-list">${state.docCategories.map(c => `<option value="${c}">`).join('')}</datalist>
+          <input id="doc-title" type="text" placeholder="文件名稱" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <input id="doc-ref" type="text" placeholder="單號 / 確認碼（選填）" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <input id="doc-expiry" type="date" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <input id="doc-note" type="text" placeholder="備註（選填）" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
           <button onclick="saveDocument()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">儲存文件</button>
         </div>
       `);
@@ -977,9 +1247,7 @@
       const category = (document.getElementById('doc-cat-input').value || '其他').trim();
       const title = (document.getElementById('doc-title').value || '').trim();
       if (!title) return showToast('請輸入文件名稱');
-      if (!state.docCategories.includes(category)) {
-        state.docCategories.push(category);
-      }
+      if (!state.docCategories.includes(category)) state.docCategories.push(category);
       state.documents.unshift({
         id: 'doc_' + Date.now(),
         category,
@@ -992,7 +1260,6 @@
       saveState();
       closeModal();
       render();
-      showToast('已新增文件');
     }
 
     function deleteDocument(id) {
@@ -1014,18 +1281,9 @@
       openModal(`
         <h3 class="text-base font-bold mb-3">新增行李與警示提醒</h3>
         <div class="space-y-3 text-sm">
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">行李物品名稱</label>
-            <input id="lug-name" type="text" placeholder="例如：日本轉接頭 / 常備腸胃藥" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">分類</label>
-            <input id="lug-cat" type="text" value="隨身重要" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
-          <div>
-            <label class="text-xs text-amber-700 font-semibold block mb-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i>警示提醒內容（選填，將醒目顯示給全體）</label>
-            <input id="lug-alert" type="text" placeholder="例如：液體超過100ml必須託運！" class="w-full border border-amber-300 rounded-xl px-3 py-2 bg-amber-50" />
-          </div>
+          <input id="lug-name" type="text" placeholder="行李物品名稱" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <input id="lug-cat" type="text" value="隨身重要" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <input id="lug-alert" type="text" placeholder="警示提醒（選填，例如：不可託運！）" class="w-full border border-amber-300 rounded-xl px-3 py-2 bg-amber-50" />
           <button onclick="saveLuggageItem()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">加入行李清單</button>
         </div>
       `);
@@ -1046,7 +1304,6 @@
       saveState();
       closeModal();
       render();
-      showToast('已新增行李項目');
     }
 
     function openEditLuggageAlertModal(id) {
@@ -1069,7 +1326,6 @@
       }
       closeModal();
       render();
-      showToast('已更新警示提醒');
     }
 
     function deleteLuggageItem(id) {
@@ -1082,17 +1338,11 @@
       openModal(`
         <h3 class="text-base font-bold mb-3">新增待辦事項</h3>
         <div class="space-y-3 text-sm">
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">待辦內容</label>
-            <input id="todo-title" type="text" placeholder="例如：預約廣島燒餐廳" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">指定負責人物</label>
-            <select id="todo-assignee" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
-              <option value="all">👥 全體共同</option>
-              ${state.members.map(m => `<option value="${m.id}">${m.avatar} ${m.name}</option>`).join('')}
-            </select>
-          </div>
+          <input id="todo-title" type="text" placeholder="待辦內容" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <select id="todo-assignee" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
+            <option value="all">👥 全體共同</option>
+            ${state.members.map(m => `<option value="${m.id}">${m.avatar} ${m.name}</option>`).join('')}
+          </select>
           <button onclick="saveTodo()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">新增待辦</button>
         </div>
       `);
@@ -1112,25 +1362,16 @@
       saveState();
       closeModal();
       render();
-      showToast('已新增待辦事項');
     }
 
     function toggleTodo(id) {
       const td = state.todos.find(t => t.id === id);
-      if (td) {
-        td.done = !td.done;
-        saveState();
-        render();
-      }
+      if (td) { td.done = !td.done; saveState(); render(); }
     }
 
     function toggleTodoComments(id) {
       const td = state.todos.find(t => t.id === id);
-      if (td) {
-        td.commentsExpanded = !td.commentsExpanded;
-        saveState();
-        render();
-      }
+      if (td) { td.commentsExpanded = !td.commentsExpanded; saveState(); render(); }
     }
 
     function addTodoComment(id) {
@@ -1140,10 +1381,10 @@
       const text = input.value.trim();
       if (!text) return showToast('請輸入進度內容');
       const now = new Date();
-      const timeStr = `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const timeStr = `${now.getMonth()+1}/${now.getDate()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
       td.comments.push({
         id: 'c_' + Date.now(),
-        authorId: state.currentUserId, // 強制鎖定本機綁定身分，不能切換冒用他人
+        authorId: state.currentUserId,
         text,
         createdAt: timeStr
       });
@@ -1163,7 +1404,7 @@
         <h3 class="text-base font-bold mb-3">新增想去清單</h3>
         <div class="space-y-3 text-sm">
           <input id="wish-title" type="text" placeholder="地點或美食名稱" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          <input id="wish-cat" type="text" value="景點" placeholder="分類（景點/美食/購物）" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <input id="wish-cat" type="text" value="景點" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
           <input id="wish-note" type="text" placeholder="備註" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
           <button onclick="saveWishlist()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">儲存</button>
         </div>
@@ -1190,61 +1431,6 @@
       render();
     }
 
-    // ==================== 行程分頁 ====================
-    function renderItineraryTab() {
-      return `
-        <button onclick="openAddItineraryModal()" class="w-full py-3 rounded-2xl btn-primary font-semibold text-sm flex items-center justify-center gap-2 mb-4 shadow-xs">
-          <i class="fa-solid fa-plus"></i> 新增行程節點
-        </button>
-        <div class="space-y-3">
-          ${state.itinerary.map(item => `
-            <div class="card-surface p-4">
-              <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
-                <span class="font-bold text-[#4f6f52]">Day ${item.day} · ${item.date} ${item.time}</span>
-                <span class="px-2 py-0.5 rounded-full bg-[#efede4]">${item.category}</span>
-              </div>
-              <div class="font-bold text-base">${item.title}</div>
-              ${item.note ? `<div class="text-xs text-gray-500 mt-1">${item.note}</div>` : ''}
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
-
-    function openAddItineraryModal() {
-      openModal(`
-        <h3 class="text-base font-bold mb-3">新增行程節點</h3>
-        <div class="space-y-3 text-sm">
-          <div class="grid grid-cols-2 gap-2">
-            <input id="it-day" type="number" value="1" min="1" placeholder="第幾天" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-            <input id="it-time" type="time" value="10:00" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
-          <input id="it-date" type="date" value="${state.tripInfo.startDate}" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          <input id="it-title" type="text" placeholder="行程標題" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          <input id="it-cat" type="text" value="景點" placeholder="分類" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          <input id="it-note" type="text" placeholder="備註" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          <button onclick="saveItinerary()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">加入行程</button>
-        </div>
-      `);
-    }
-
-    function saveItinerary() {
-      const title = document.getElementById('it-title').value.trim();
-      if (!title) return showToast('請輸入行程標題');
-      state.itinerary.push({
-        id: 'it_' + Date.now(),
-        day: Number(document.getElementById('it-day').value) || 1,
-        date: document.getElementById('it-date').value,
-        time: document.getElementById('it-time').value,
-        title,
-        category: document.getElementById('it-cat').value || '景點',
-        note: document.getElementById('it-note').value.trim()
-      });
-      saveState();
-      closeModal();
-      render();
-    }
-
     // ==================== 7. 日誌分頁（支援已完成日誌後續編輯） ====================
     function renderJournalTab() {
       return `
@@ -1259,15 +1445,13 @@
                 <div class="flex items-center justify-between text-xs text-gray-500 mb-1.5">
                   <span>${jn.date} · ${author.avatar} ${author.name}</span>
                   <div class="flex items-center gap-2">
-                    <button onclick="openJournalModal('${jn.id}')" class="text-[#4f6f52] font-semibold hover:underline">
-                      <i class="fa-solid fa-pen-to-square mr-0.5"></i>編輯
-                    </button>
+                    <button onclick="openJournalModal('${jn.id}')" class="text-[#4f6f52] font-semibold"><i class="fa-solid fa-pen-to-square mr-0.5"></i>編輯</button>
                     <button onclick="deleteJournal('${jn.id}')" class="text-red-400">刪除</button>
                   </div>
                 </div>
                 <div class="font-bold text-base mb-1">${jn.title}</div>
                 <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-line">${jn.content}</p>
-                ${jn.updatedAt ? `<div class="text-[11px] text-gray-400 mt-2">最後更新：${jn.updatedAt}</div>` : ''}
+                ${jn.updatedAt ? `<div class="text-[11px] text-gray-400 mt-2">更新時間：${jn.updatedAt}</div>` : ''}
               </div>
             `;
           }).join('')}
@@ -1280,21 +1464,10 @@
       openModal(`
         <h3 class="text-base font-bold mb-3">${existing ? '編輯旅遊日誌' : '新增旅遊日誌'}</h3>
         <div class="space-y-3 text-sm">
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">日期</label>
-            <input id="jn-date" type="date" value="${existing ? existing.date : state.tripInfo.startDate}" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">日誌標題</label>
-            <input id="jn-title" type="text" value="${existing ? existing.title : ''}" placeholder="今天最難忘的時刻..." class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">內容</label>
-            <textarea id="jn-content" rows="5" placeholder="記錄心情、美食或趣事..." class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">${existing ? existing.content : ''}</textarea>
-          </div>
-          <button onclick="saveJournal('${editId || ''}')" class="w-full py-2.5 rounded-xl btn-primary font-semibold">
-            ${existing ? '儲存修改' : '發佈日誌'}
-          </button>
+          <input id="jn-date" type="date" value="${existing ? existing.date : state.tripInfo.startDate}" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <input id="jn-title" type="text" value="${existing ? existing.title : ''}" placeholder="日誌標題" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <textarea id="jn-content" rows="5" placeholder="記錄今天的心情與故事..." class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">${existing ? existing.content : ''}</textarea>
+          <button onclick="saveJournal('${editId || ''}')" class="w-full py-2.5 rounded-xl btn-primary font-semibold">${existing ? '儲存修改' : '發佈日誌'}</button>
         </div>
       `);
     }
@@ -1342,16 +1515,17 @@
       const subTabs = [
         { id: 'split', icon: 'fa-solid fa-file-invoice-dollar', label: '分帳總覽' },
         { id: 'cash', icon: 'fa-solid fa-money-bill-wave', label: '外幣現金' },
-        { id: 'pool', icon: 'fa-solid fa-piggy-bank', label: '公費管理' }
+        { id: 'pool', icon: 'fa-solid fa-piggy-bank', label: '公費管理' },
+        { id: 'planned', icon: 'fa-solid fa-list-ul', label: '預估花費' }
       ];
 
       const navHtml = `
-        <div class="bg-white border border-[#e6e2d6] rounded-full p-1 grid grid-cols-3 gap-1 mb-4">
+        <div class="bg-white border border-[#e6e2d6] rounded-full p-1 grid grid-cols-4 gap-1 mb-4">
           ${subTabs.map(t => {
             const active = state.expenseSubTab === t.id;
             return `
               <button onclick="state.expenseSubTab='${t.id}'; saveState(); render();"
-                class="py-2 rounded-full text-xs font-semibold flex items-center justify-center gap-1.5 transition ${active ? 'bg-[#232720] text-white shadow-xs' : 'text-gray-600'}">
+                class="py-2 rounded-full text-xs font-semibold flex items-center justify-center gap-1 ${active ? 'bg-[#232720] text-white shadow-xs' : 'text-gray-600'}">
                 <i class="${t.icon}"></i> ${t.label}
               </button>
             `;
@@ -1359,7 +1533,7 @@
         </div>
       `;
 
-      // 10. 修復篩選 Bug：點選某人（例如鄭聿宸）時，只篩選「由該成員先付（paidBy === filterId）」的支出明細與對應總額
+      // 10. 修復篩選 Bug：點選某人（如鄭聿宸）時只顯示該成員先付（paidBy === filterId）的支出與總額
       if (state.expenseSubTab === 'split') {
         const filterId = state.expenseFilterMemberId || 'all';
         const filteredExpenses = filterId === 'all'
@@ -1393,7 +1567,6 @@
             `).join('')}
           </div>
 
-          <!-- 綠色總覽卡片 -->
           <div class="rounded-3xl bg-[#4f6f52] text-white p-5 mb-4 shadow-sm">
             <div class="text-xs opacity-85 mb-1">
               ${filterMember ? `${filterMember.avatar} ${filterMember.name} 先付總支出 (TWD)` : '分帳總支出 (TWD)'}
@@ -1410,9 +1583,7 @@
           </div>
 
           <div class="space-y-2.5">
-            ${filteredExpenses.length === 0 ? `
-              <div class="card-surface p-8 text-center text-xs text-gray-400">目前沒有符合條件的支出紀錄</div>
-            ` : filteredExpenses.map(ex => {
+            ${filteredExpenses.length === 0 ? `<div class="card-surface p-8 text-center text-xs text-gray-400">目前沒有符合條件的支出紀錄</div>` : filteredExpenses.map(ex => {
               const payer = getMember(ex.paidBy);
               const twdVal = toTWD(ex.amount, ex.currency);
               return `
@@ -1424,13 +1595,13 @@
                     </div>
                     <div class="font-bold text-base truncate">${ex.title}</div>
                     <div class="text-xs text-gray-500 mt-1">
-                      由 ${payer.avatar} ${payer.name} 先付 · ${ex.splitWith.length}人平分
+                      由 ${payer.avatar} ${payer.name} 先付 · ${ex.splitMode === 'custom' ? '自訂分攤' : `${ex.splitWith.length}人平分`}
                     </div>
                   </div>
                   <div class="text-right shrink-0">
                     <div class="font-bold text-base">NT$ ${twdVal.toLocaleString()}</div>
                     ${ex.currency !== 'TWD' ? `<div class="text-xs text-gray-400">${ex.currency} ${Number(ex.amount).toLocaleString()}</div>` : ''}
-                    <button onclick="deleteExpense('${ex.id}')" class="text-xs text-red-400 hover:text-red-600 mt-1">刪除</button>
+                    <button onclick="deleteExpense('${ex.id}')" class="text-xs text-red-400 mt-1">刪除</button>
                   </div>
                 </div>
               `;
@@ -1439,13 +1610,11 @@
         `;
       }
 
-      // 9. 外幣現金（預設 JPY/KRW/USD，另可手動輸入任意指定幣別）
       if (state.expenseSubTab === 'cash') {
         return navHtml + `
           <button onclick="openAddCashWalletModal()" class="w-full py-3 rounded-2xl btn-primary font-semibold text-sm flex items-center justify-center gap-2 mb-4 shadow-xs">
             <i class="fa-solid fa-plus"></i> 新增外幣現金袋（預設三種或手動指定幣別）
           </button>
-
           <div class="space-y-3">
             ${state.cashWallets.map(cw => {
               const spentCash = state.expenses
@@ -1482,9 +1651,7 @@
         `;
       }
 
-      // 8. 公費管理（支援指定外幣入金 + 設定保管人）
       if (state.expenseSubTab === 'pool') {
-        // 依幣別與保管人統計公費餘額
         const byCurrency = {};
         const byCustodian = {};
 
@@ -1494,23 +1661,19 @@
           byCustodian[key] = (byCustodian[key] || 0) + Number(dep.amount);
         });
 
-        // 若支出選用「公費支付」則扣除對應幣別公費
-        state.expenses
-          .filter(ex => ex.payMethod === '公費支付')
-          .forEach(ex => {
-            byCurrency[ex.currency] = (byCurrency[ex.currency] || 0) - Number(ex.amount);
-            const key = `${ex.paidBy}_${ex.currency}`;
-            byCustodian[key] = (byCustodian[key] || 0) - Number(ex.amount);
-          });
+        state.expenses.filter(ex => ex.payMethod === '公費支付').forEach(ex => {
+          byCurrency[ex.currency] = (byCurrency[ex.currency] || 0) - Number(ex.amount);
+          const key = `${ex.paidBy}_${ex.currency}`;
+          byCustodian[key] = (byCustodian[key] || 0) - Number(ex.amount);
+        });
 
         return navHtml + `
           <button onclick="openAddPoolDepositModal()" class="w-full py-3 rounded-2xl btn-primary font-semibold text-sm flex items-center justify-center gap-2 mb-4 shadow-xs">
             <i class="fa-solid fa-piggy-bank"></i> 新增公費入金（支援外幣／指定保管人）
           </button>
 
-          <!-- 各幣別公費總餘額 -->
           <div class="card-surface p-4 mb-3">
-            <div class="font-bold text-xs text-gray-500 mb-2">目前各幣別公費總結餘</div>
+            <div class="font-bold text-xs text-gray-500 mb-2">各幣別公費總結餘</div>
             <div class="grid grid-cols-2 gap-2">
               ${Object.keys(byCurrency).length === 0 ? '<div class="text-xs text-gray-400">尚無公費紀錄</div>' : Object.entries(byCurrency).map(([cur, amt]) => `
                 <div class="bg-white border border-[#e6e2d6] rounded-2xl p-3">
@@ -1521,7 +1684,6 @@
             </div>
           </div>
 
-          <!-- 各保管人持有明細 -->
           <div class="card-surface p-4 mb-4">
             <div class="font-bold text-xs text-gray-500 mb-2">👤 各保管人持有公費狀況</div>
             <div class="space-y-1.5">
@@ -1538,7 +1700,7 @@
             </div>
           </div>
 
-          <div class="font-bold text-sm mb-2 text-gray-700">公費入金紀錄</div>
+          <div class="font-bold text-sm mb-2 text-gray-700">公費入金明細</div>
           <div class="space-y-2.5">
             ${state.publicPoolDeposits.map(dep => {
               const contrib = getMember(dep.contributorId);
@@ -1547,9 +1709,7 @@
                 <div class="card-surface p-3.5 flex items-center justify-between">
                   <div>
                     <div class="font-bold text-sm">${contrib.avatar} ${contrib.name} 入金 ${dep.currency} ${Number(dep.amount).toLocaleString()}</div>
-                    <div class="text-xs text-[#4f6f52] font-medium mt-0.5">
-                      <i class="fa-solid fa-hand-holding-dollar mr-1"></i>保管人：${cust.avatar} ${cust.name}
-                    </div>
+                    <div class="text-xs text-[#4f6f52] font-medium mt-0.5">保管人：${cust.avatar} ${cust.name}</div>
                     <div class="text-[11px] text-gray-400 mt-0.5">${dep.date}${dep.note ? ' · ' + dep.note : ''}</div>
                   </div>
                   <button onclick="deletePoolDeposit('${dep.id}')" class="text-xs text-red-400">刪除</button>
@@ -1560,67 +1720,80 @@
         `;
       }
 
+      if (state.expenseSubTab === 'planned') {
+        return navHtml + `
+          <button onclick="openAddPlannedExpenseModal()" class="w-full py-3 rounded-2xl btn-primary font-semibold text-sm flex items-center justify-center gap-2 mb-4 shadow-xs">
+            <i class="fa-solid fa-plus"></i> 新增潛在 / 預估花費
+          </button>
+          <div class="space-y-2.5">
+            ${state.plannedExpenses.map(pl => `
+              <div class="card-surface p-4 flex items-center justify-between">
+                <div>
+                  <div class="font-bold text-sm">${pl.title}</div>
+                  ${pl.note ? `<div class="text-xs text-gray-500 mt-0.5">${pl.note}</div>` : ''}
+                </div>
+                <div class="text-right">
+                  <div class="font-bold text-sm">${pl.currency} ${Number(pl.amount).toLocaleString()}</div>
+                  <div class="text-[11px] text-gray-400">約 NT$ ${toTWD(pl.amount, pl.currency).toLocaleString()}</div>
+                  <button onclick="deletePlannedExpense('${pl.id}')" class="text-xs text-red-400 mt-1">刪除</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
       return navHtml;
     }
 
-    // 記帳相關 Modal 與邏輯
     function openAddExpenseModal() {
       const currencies = getAllCurrencies();
       openModal(`
         <h3 class="text-base font-bold mb-3">新增支出紀錄</h3>
         <div class="space-y-3 text-sm">
           <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="text-xs text-gray-500 block mb-1">日期</label>
-              <input id="ex-date" type="date" value="${state.tripInfo.startDate}" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-            </div>
-            <div>
-              <label class="text-xs text-gray-500 block mb-1">分類</label>
-              <select id="ex-cat" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
-                <option>餐飲</option><option>交通</option><option>住宿</option><option>購物</option><option>門票</option><option>其他</option>
-              </select>
-            </div>
+            <input id="ex-date" type="date" value="${state.tripInfo.startDate}" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+            <select id="ex-cat" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
+              <option>餐飲</option><option>交通</option><option>住宿</option><option>購物</option><option>門票</option><option>其他</option>
+            </select>
           </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">項目名稱</label>
-            <input id="ex-title" type="text" placeholder="例如：一蘭拉麵 / JR車票" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <input id="ex-title" type="text" placeholder="項目名稱" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <div class="grid grid-cols-2 gap-2">
+            <select id="ex-currency" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
+              ${currencies.map(c => `<option value="${c}" ${c==='JPY'?'selected':''}>${c}</option>`).join('')}
+            </select>
+            <input id="ex-amount" type="number" placeholder="金額" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
           </div>
           <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="text-xs text-gray-500 block mb-1">幣別</label>
-              <select id="ex-currency" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
-                ${currencies.map(c => `<option value="${c}" ${c === 'JPY' ? 'selected' : ''}>${c}</option>`).join('')}
-              </select>
-            </div>
-            <div>
-              <label class="text-xs text-gray-500 block mb-1">金額</label>
-              <input id="ex-amount" type="number" placeholder="0" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-            </div>
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="text-xs text-gray-500 block mb-1">支付方式</label>
-              <select id="ex-method" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
-                <option value="現金支付">現金支付</option>
-                <option value="信用卡">信用卡</option>
-                <option value="公費支付">公費支付</option>
-              </select>
-            </div>
-            <div>
-              <label class="text-xs text-gray-500 block mb-1">先付 / 付款人</label>
-              <select id="ex-paidby" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
-                ${state.members.map(m => `<option value="${m.id}" ${m.id === state.currentUserId ? 'selected' : ''}>${m.avatar} ${m.name}</option>`).join('')}
-              </select>
-            </div>
+            <select id="ex-method" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
+              <option value="現金支付">現金支付</option>
+              <option value="信用卡">信用卡</option>
+              <option value="公費支付">公費支付</option>
+            </select>
+            <select id="ex-paidby" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
+              ${state.members.map(m => `<option value="${m.id}" ${m.id===state.currentUserId?'selected':''}>${m.avatar} ${m.name}</option>`).join('')}
+            </select>
           </div>
           <div>
-            <label class="text-xs text-gray-500 block mb-1">平分成員（可複選）</label>
-            <div class="flex flex-wrap gap-2">
+            <label class="text-xs text-gray-500 block mb-1">分攤方式</label>
+            <select id="ex-split-mode" onchange="toggleCustomShareBox()" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white mb-2">
+              <option value="equal">平均分攤</option>
+              <option value="custom">自訂每人分攤金額（原幣別）</option>
+            </select>
+            <div id="ex-equal-box" class="flex flex-wrap gap-2">
               ${state.members.map(m => `
                 <label class="flex items-center gap-1.5 bg-white border border-[#e6e2d6] px-3 py-1.5 rounded-xl text-xs">
                   <input type="checkbox" name="ex-split" value="${m.id}" checked class="accent-[#4f6f52]" />
                   <span>${m.avatar} ${m.name}</span>
                 </label>
+              `).join('')}
+            </div>
+            <div id="ex-custom-box" class="hidden space-y-1.5">
+              ${state.members.map(m => `
+                <div class="flex items-center justify-between bg-white border border-[#e6e2d6] rounded-xl px-3 py-1.5 text-xs">
+                  <span>${m.avatar} ${m.name}</span>
+                  <input type="number" data-share-uid="${m.id}" placeholder="0" class="w-28 border border-[#e6e2d6] rounded-lg px-2 py-1 text-right" />
+                </div>
               `).join('')}
             </div>
           </div>
@@ -1629,12 +1802,35 @@
       `);
     }
 
+    function toggleCustomShareBox() {
+      const mode = document.getElementById('ex-split-mode').value;
+      document.getElementById('ex-equal-box').classList.toggle('hidden', mode === 'custom');
+      document.getElementById('ex-custom-box').classList.toggle('hidden', mode !== 'custom');
+    }
+
     function saveExpense() {
       const title = document.getElementById('ex-title').value.trim();
       const amount = parseFloat(document.getElementById('ex-amount').value);
-      const splitWith = Array.from(document.querySelectorAll('input[name="ex-split"]:checked')).map(el => el.value);
+      const splitMode = document.getElementById('ex-split-mode').value;
       if (!title || isNaN(amount) || amount <= 0) return showToast('請輸入項目與有效金額');
-      if (splitWith.length === 0) return showToast('請至少勾選一位分攤成員');
+
+      let splitWith = [];
+      let customShares = {};
+
+      if (splitMode === 'custom') {
+        document.querySelectorAll('#ex-custom-box input[data-share-uid]').forEach(inp => {
+          const val = parseFloat(inp.value) || 0;
+          if (val > 0) {
+            const uid = inp.getAttribute('data-share-uid');
+            splitWith.push(uid);
+            customShares[uid] = val;
+          }
+        });
+        if (splitWith.length === 0) return showToast('請至少填寫一位成員的自訂金額');
+      } else {
+        splitWith = Array.from(document.querySelectorAll('input[name="ex-split"]:checked')).map(el => el.value);
+        if (splitWith.length === 0) return showToast('請至少勾選一位分攤成員');
+      }
 
       state.expenses.unshift({
         id: 'ex_' + Date.now(),
@@ -1645,7 +1841,9 @@
         currency: document.getElementById('ex-currency').value,
         payMethod: document.getElementById('ex-method').value,
         paidBy: document.getElementById('ex-paidby').value,
-        splitWith
+        splitMode,
+        splitWith,
+        customShares
       });
       saveState();
       closeModal();
@@ -1666,10 +1864,16 @@
       state.expenses.filter(ex => ex.payMethod !== '公費支付').forEach(ex => {
         const twd = toTWD(ex.amount, ex.currency);
         if (net[ex.paidBy] !== undefined) net[ex.paidBy] += twd;
-        const share = twd / ex.splitWith.length;
-        ex.splitWith.forEach(uid => {
-          if (net[uid] !== undefined) net[uid] -= share;
-        });
+        if (ex.splitMode === 'custom' && ex.customShares) {
+          Object.entries(ex.customShares).forEach(([uid, shareAmt]) => {
+            if (net[uid] !== undefined) net[uid] -= toTWD(shareAmt, ex.currency);
+          });
+        } else {
+          const share = twd / ex.splitWith.length;
+          ex.splitWith.forEach(uid => {
+            if (net[uid] !== undefined) net[uid] -= share;
+          });
+        }
       });
 
       openModal(`
@@ -1691,30 +1895,18 @@
       `);
     }
 
-    // 9. 新增外幣現金袋 Modal（預設 JPY/KRW/USD，亦可手動打入任意幣別代碼）
     function openAddCashWalletModal() {
       openModal(`
         <h3 class="text-base font-bold mb-3">新增外幣現金袋</h3>
         <div class="space-y-3 text-sm">
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">選擇預設幣別或手動輸入指定幣別（如 EUR / THB / HKD）</label>
-            <div class="flex gap-1.5 mb-2">
-              ${['JPY', 'KRW', 'USD'].map(c => `
-                <button type="button" onclick="document.getElementById('cw-currency').value='${c}'"
-                  class="px-3 py-1 rounded-lg bg-[#e6efe7] text-[#3d5a40] font-bold text-xs">${c}</button>
-              `).join('')}
-            </div>
-            <input id="cw-currency" type="text" value="JPY" maxlength="6" placeholder="手動輸入幣別代碼，例如 THB"
-              class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white uppercase font-semibold" />
+          <div class="flex gap-1.5">
+            ${['JPY', 'KRW', 'USD'].map(c => `
+              <button type="button" onclick="document.getElementById('cw-currency').value='${c}'" class="px-3 py-1 rounded-lg bg-[#e6efe7] text-[#3d5a40] font-bold text-xs">${c}</button>
+            `).join('')}
           </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">初始外幣現金額度</label>
-            <input id="cw-amount" type="number" placeholder="例如：50000" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">備註（選填）</label>
-            <input id="cw-note" type="text" placeholder="例如：機場提款 / 台灣銀行換匯" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
+          <input id="cw-currency" type="text" value="JPY" maxlength="6" placeholder="或手動輸入幣別（如 THB / EUR）" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white uppercase font-semibold" />
+          <input id="cw-amount" type="number" placeholder="初始現金額度" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <input id="cw-note" type="text" placeholder="備註（選填）" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
           <button onclick="saveCashWallet()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">建立外幣現金袋</button>
         </div>
       `);
@@ -1724,12 +1916,7 @@
       const currency = (document.getElementById('cw-currency').value || '').trim().toUpperCase();
       const amount = parseFloat(document.getElementById('cw-amount').value);
       if (!currency || isNaN(amount) || amount < 0) return showToast('請輸入正確的幣別與金額');
-
-      // 若是新自訂幣別，順便補進匯率表方便換算
-      if (!state.tripInfo.rates[currency]) {
-        state.tripInfo.rates[currency] = 1;
-      }
-
+      if (!state.tripInfo.rates[currency]) state.tripInfo.rates[currency] = 1;
       state.cashWallets.push({
         id: 'cw_' + Date.now(),
         currency,
@@ -1748,7 +1935,6 @@
       render();
     }
 
-    // 8. 新增公費入金 Modal（不限 TWD，可選外幣或手動打入幣別 + 指定保管人）
     function openAddPoolDepositModal() {
       const currencies = getAllCurrencies();
       openModal(`
@@ -1770,25 +1956,17 @@
           </div>
           <div class="grid grid-cols-2 gap-2">
             <div>
-              <label class="text-xs text-gray-500 block mb-1">入金幣別（可選或手動輸入）</label>
+              <label class="text-xs text-gray-500 block mb-1">幣別（可選或手動輸入）</label>
               <input id="pd-currency" list="pd-cur-list" value="TWD" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white uppercase font-semibold" />
-              <datalist id="pd-cur-list">
-                ${currencies.map(c => `<option value="${c}">`).join('')}
-              </datalist>
+              <datalist id="pd-cur-list">${currencies.map(c => `<option value="${c}">`).join('')}</datalist>
             </div>
             <div>
               <label class="text-xs text-gray-500 block mb-1">入金金額</label>
               <input id="pd-amount" type="number" placeholder="0" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
             </div>
           </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">日期</label>
-            <input id="pd-date" type="date" value="${state.tripInfo.startDate}" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">備註（選填）</label>
-            <input id="pd-note" type="text" placeholder="例如：機場共同換匯公費" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
-          </div>
+          <input id="pd-date" type="date" value="${state.tripInfo.startDate}" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <input id="pd-note" type="text" placeholder="備註（選填）" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
           <button onclick="savePoolDeposit()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">確認入金</button>
         </div>
       `);
@@ -1798,11 +1976,7 @@
       const currency = (document.getElementById('pd-currency').value || 'TWD').trim().toUpperCase();
       const amount = parseFloat(document.getElementById('pd-amount').value);
       if (!currency || isNaN(amount) || amount <= 0) return showToast('請輸入正確的幣別與金額');
-
-      if (!state.tripInfo.rates[currency]) {
-        state.tripInfo.rates[currency] = 1;
-      }
-
+      if (!state.tripInfo.rates[currency]) state.tripInfo.rates[currency] = 1;
       state.publicPoolDeposits.unshift({
         id: 'pd_' + Date.now(),
         date: document.getElementById('pd-date').value,
@@ -1824,24 +1998,98 @@
       render();
     }
 
+    function openAddPlannedExpenseModal() {
+      openModal(`
+        <h3 class="text-base font-bold mb-3">新增潛在 / 預估花費</h3>
+        <div class="space-y-3 text-sm">
+          <input id="pl-title" type="text" placeholder="項目名稱" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <div class="grid grid-cols-2 gap-2">
+            <select id="pl-cur" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white">
+              ${getAllCurrencies().map(c => `<option value="${c}" ${c==='JPY'?'selected':''}>${c}</option>`).join('')}
+            </select>
+            <input id="pl-amt" type="number" placeholder="預估金額" class="border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          </div>
+          <input id="pl-note" type="text" placeholder="備註" class="w-full border border-[#e6e2d6] rounded-xl px-3 py-2 bg-white" />
+          <button onclick="savePlannedExpense()" class="w-full py-2.5 rounded-xl btn-primary font-semibold">儲存預估</button>
+        </div>
+      `);
+    }
+
+    function savePlannedExpense() {
+      const title = document.getElementById('pl-title').value.trim();
+      const amount = parseFloat(document.getElementById('pl-amt').value);
+      if (!title || isNaN(amount) || amount <= 0) return showToast('請輸入項目與金額');
+      state.plannedExpenses.push({
+        id: 'pl_' + Date.now(),
+        title,
+        currency: document.getElementById('pl-cur').value,
+        amount,
+        note: document.getElementById('pl-note').value.trim()
+      });
+      saveState();
+      closeModal();
+      render();
+    }
+
+    function deletePlannedExpense(id) {
+      state.plannedExpenses = state.plannedExpenses.filter(p => p.id !== id);
+      saveState();
+      render();
+    }
+
+    // ==================== 成員分頁 ====================
+    function renderMembersTab() {
+      return `
+        <div class="card-surface p-4 mb-4 flex items-center justify-between">
+          <div>
+            <div class="font-bold text-sm">旅伴成員名單（共 ${state.members.length} 人）</div>
+            <div class="text-xs text-gray-500 mt-0.5">支援自行貼上表情符號、調整順序與切換本機身分</div>
+          </div>
+          <button onclick="openSettingsModal()" class="px-3.5 py-2 rounded-xl btn-primary text-xs font-semibold">管理 / 新增</button>
+        </div>
+        <div class="space-y-2.5">
+          ${state.members.map((m, idx) => `
+            <div class="card-surface p-4 flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <span class="text-2xl w-10 h-10 rounded-full bg-white border border-[#e6e2d6] flex items-center justify-center">${m.avatar}</span>
+                <div>
+                  <div class="font-bold text-sm flex items-center gap-1.5">
+                    ${m.name}
+                    ${state.currentUserId === m.id ? '<span class="text-[10px] bg-[#e6efe7] text-[#4f6f52] px-2 py-0.5 rounded-full">本機身分</span>' : ''}
+                  </div>
+                  <div class="text-xs text-gray-400">排序 #${idx + 1}</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-1">
+                <button onclick="moveMember(${idx}, -1)" class="p-2 text-gray-400 hover:text-gray-700"><i class="fa-solid fa-arrow-up text-xs"></i></button>
+                <button onclick="moveMember(${idx}, 1)" class="p-2 text-gray-400 hover:text-gray-700"><i class="fa-solid fa-arrow-down text-xs"></i></button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
     // ==================== 底部導覽列 ====================
     function renderBottomNav() {
       const navs = [
         { id: 'itinerary', icon: 'fa-regular fa-calendar', label: '行程' },
+        { id: 'booking', icon: 'fa-solid fa-plane-departure', label: '預訂' },
         { id: 'list', icon: 'fa-solid fa-list-check', label: '清單' },
         { id: 'journal', icon: 'fa-solid fa-book-open', label: '日誌' },
-        { id: 'expense', icon: 'fa-solid fa-wallet', label: '記帳' }
+        { id: 'expense', icon: 'fa-solid fa-wallet', label: '記帳' },
+        { id: 'members', icon: 'fa-solid fa-users', label: '成員' }
       ];
       return `
         <nav class="fixed bottom-0 left-0 right-0 bg-[#faf9f5]/95 backdrop-blur border-t border-[#e6e2d6] z-40">
-          <div class="max-w-md mx-auto grid grid-cols-4 py-2">
+          <div class="max-w-md mx-auto grid grid-cols-6 py-2">
             ${navs.map(n => {
               const active = state.activeTab === n.id;
               return `
                 <button onclick="state.activeTab='${n.id}'; saveState(); render();"
                   class="flex flex-col items-center justify-center gap-1 py-1 ${active ? 'text-[#4f6f52] font-bold' : 'text-gray-400'}">
-                  <i class="${n.icon} text-base"></i>
-                  <span class="text-[11px]">${n.label}</span>
+                  <i class="${n.icon} text-sm"></i>
+                  <span class="text-[10px]">${n.label}</span>
                 </button>
               `;
             }).join('')}
@@ -1854,9 +2102,11 @@
       const app = document.getElementById('app');
       let body = '';
       if (state.activeTab === 'itinerary') body = renderItineraryTab();
+      if (state.activeTab === 'booking') body = renderBookingTab();
       if (state.activeTab === 'list') body = renderListTab();
       if (state.activeTab === 'journal') body = renderJournalTab();
       if (state.activeTab === 'expense') body = renderExpenseTab();
+      if (state.activeTab === 'members') body = renderMembersTab();
 
       app.innerHTML = renderHeader() + body + renderBottomNav();
     }
